@@ -7,8 +7,17 @@ import { ConcertEvent, EventFormData, EventStatus } from '../types/event';
 import { createVenue, updateVenue, deleteVenue, seedSampleVenues } from '../services/venueService';
 import { createPromoter, updatePromoter, deletePromoter, seedSamplePromoters } from '../services/promoterService';
 import { createEvent, updateEvent, updateEventStatus, deleteEvent, seedSampleEvents } from '../services/eventService';
+import { fetchEventRecentReportsCount, deleteAllEventReports } from '../services/reportService';
 import { STATUS_MAP } from '../utils/statusUtils';
-import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
+import { OrganizerRequest, OrganizerRecord } from '../types/organizer';
+import {
+  subscribeOrganizerRequests,
+  subscribeActiveOrganizers,
+  approveOrganizerRequest,
+  rejectOrganizerRequest,
+  revokeOrganizer,
+} from '../services/organizerService';
+import { formatBangkokDateTime, formatRelativeTime, parseTimestampToDate } from '../utils/dateUtils';
 import {
   Lock,
   LogOut,
@@ -29,6 +38,9 @@ import {
   Layers,
   Music2,
   Users,
+  ShieldCheck,
+  Check,
+  Ban,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -40,7 +52,7 @@ interface AdminPanelProps {
   editingVenueInitial?: Venue | null;
 }
 
-type AdminTab = 'events' | 'venues' | 'promoters';
+type AdminTab = 'events' | 'venues' | 'promoters' | 'organizers';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
@@ -111,7 +123,132 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSeedingAll, setIsSeedingAll] = useState(false);
 
+  // Requirement 7: Track crowd reports count in last 90 minutes per event
+  const [reportCounts, setReportCounts] = useState<Record<string, number>>({});
+  const [clearingReportsId, setClearingReportsId] = useState<string | null>(null);
+
+  // Fetch report counts when events change or events tab is active
+  React.useEffect(() => {
+    if (activeTab === 'events' && events.length > 0) {
+      events.forEach(async (ev) => {
+        try {
+          const count = await fetchEventRecentReportsCount(ev.id);
+          setReportCounts((prev) => ({ ...prev, [ev.id]: count }));
+        } catch {
+          // ignore
+        }
+      });
+    }
+  }, [activeTab, events]);
+
+  const handleDeleteReports = async (eventId: string, eventTitle: string) => {
+    setClearingReportsId(eventId);
+    setErrorMessage(null);
+    try {
+      const deletedCount = await deleteAllEventReports(eventId);
+      setReportCounts((prev) => ({ ...prev, [eventId]: 0 }));
+      setSuccessMessage(`Deleted ${deletedCount} reports for "${eventTitle}".`);
+    } catch (err: any) {
+      console.error('Delete reports error:', err);
+      setErrorMessage(err?.message || 'Failed to delete reports.');
+    } finally {
+      setClearingReportsId(null);
+    }
+  };
+
   const isAdmin = user ? isUserAdmin(user.email) : false;
+
+  // Organizer Requests & Approvals State
+  const [organizerRequests, setOrganizerRequests] = useState<OrganizerRequest[]>([]);
+  const [activeOrganizers, setActiveOrganizers] = useState<OrganizerRecord[]>([]);
+  const [approvingRequest, setApprovingRequest] = useState<OrganizerRequest | null>(null);
+  const [approvalMode, setApprovalMode] = useState<'existing' | 'new'>('existing');
+  const [selectedPromoterId, setSelectedPromoterId] = useState<string>('');
+  const [newPromoterName, setNewPromoterName] = useState<string>('');
+  const [newPromoterIgUrl, setNewPromoterIgUrl] = useState<string>('');
+  const [isProcessingApproval, setIsProcessingApproval] = useState(false);
+  const [revokingUid, setRevokingUid] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!user || !isAdmin) return;
+    const unsubReqs = subscribeOrganizerRequests((reqs) => setOrganizerRequests(reqs));
+    const unsubOrgs = subscribeActiveOrganizers((orgs) => setActiveOrganizers(orgs));
+    return () => {
+      unsubReqs();
+      unsubOrgs();
+    };
+  }, [user, isAdmin]);
+
+  const handleStartApprove = (req: OrganizerRequest) => {
+    setApprovingRequest(req);
+    const matching = promoters.find((p) => p.name.toLowerCase() === req.promoterName.toLowerCase());
+    if (matching) {
+      setApprovalMode('existing');
+      setSelectedPromoterId(matching.id);
+    } else {
+      setApprovalMode('new');
+      setSelectedPromoterId(promoters[0]?.id || '');
+    }
+    setNewPromoterName(req.promoterName);
+    setNewPromoterIgUrl(req.igUrl);
+  };
+
+  const handleConfirmApprove = async () => {
+    if (!approvingRequest) return;
+    setIsProcessingApproval(true);
+    setErrorMessage(null);
+    try {
+      let finalPromoterId = selectedPromoterId;
+      if (approvalMode === 'new') {
+        if (!newPromoterName.trim()) {
+          throw new Error('New promoter name is required.');
+        }
+        finalPromoterId = await createPromoter({
+          name: newPromoterName.trim(),
+          igUrl: newPromoterIgUrl.trim(),
+          verified: true,
+        });
+      }
+
+      await approveOrganizerRequest(
+        approvingRequest.id,
+        finalPromoterId,
+        approvingRequest.contactEmail
+      );
+      setSuccessMessage(`Approved organizer for "${approvingRequest.promoterName}"!`);
+      setApprovingRequest(null);
+    } catch (err: any) {
+      console.error('Approve organizer error:', err);
+      setErrorMessage(err?.message || 'Failed to approve organizer request.');
+    } finally {
+      setIsProcessingApproval(false);
+    }
+  };
+
+  const handleRejectRequest = async (reqId: string, promoterName: string) => {
+    if (!confirm(`Reject organizer verification request for "${promoterName}"?`)) return;
+    try {
+      await rejectOrganizerRequest(reqId);
+      setSuccessMessage(`Rejected request for "${promoterName}".`);
+    } catch (err: any) {
+      console.error('Reject organizer error:', err);
+      setErrorMessage(err?.message || 'Failed to reject request.');
+    }
+  };
+
+  const handleRevokeOrganizer = async (uid: string, email: string) => {
+    if (!confirm(`Revoke verified organizer rights for "${email}"?`)) return;
+    setRevokingUid(uid);
+    try {
+      await revokeOrganizer(uid);
+      setSuccessMessage(`Revoked organizer rights for "${email}".`);
+    } catch (err: any) {
+      console.error('Revoke organizer error:', err);
+      setErrorMessage(err?.message || 'Failed to revoke organizer rights.');
+    } finally {
+      setRevokingUid(null);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
@@ -550,6 +687,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <Users className="w-3.5 h-3.5" />
                   <span>Promoters ({promoters.length})</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('organizers');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer relative ${
+                    activeTab === 'organizers'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <BadgeCheck className="w-3.5 h-3.5" />
+                  <span>Organizers ({activeOrganizers.length})</span>
+                  {organizerRequests.filter((r) => r.status === 'pending').length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping absolute top-2 right-2" />
+                  )}
+                </button>
               </div>
 
               {/* ==================== TAB 1: EVENTS ==================== */}
@@ -873,6 +1029,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   {ev.artists.join(', ')}
                                 </span>
                                 <span>({ev.priceText})</span>
+                              </div>
+
+                              {/* Requirement 7: Crowd reports in last 90 minutes & Spam cleanup */}
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-neutral-400 pt-1">
+                                <span className="inline-flex items-center gap-1 text-neutral-300">
+                                  <Users className="w-3 h-3 text-lime-400" />
+                                  <span>{reportCounts[ev.id] ?? 0} crowd reports (90m)</span>
+                                </span>
+                                <span className="text-neutral-600">•</span>
+                                <button
+                                  type="button"
+                                  disabled={clearingReportsId === ev.id}
+                                  onClick={() => handleDeleteReports(ev.id, ev.title)}
+                                  className="text-rose-400 hover:text-rose-300 hover:underline font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  title="Delete all reports for this event (spam cleanup)"
+                                >
+                                  {clearingReportsId === ev.id ? (
+                                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  )}
+                                  <span>Delete all reports</span>
+                                </button>
                               </div>
                             </div>
 
@@ -1299,6 +1478,305 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                         </div>
                       ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ==================== TAB 4: ORGANIZERS ==================== */}
+              {activeTab === 'organizers' && (
+                <div className="space-y-6">
+                  {/* Approval Modal if an applicant is selected */}
+                  {approvingRequest && (
+                    <div className="p-4 rounded-2xl bg-neutral-900/90 border border-lime-400/50 shadow-2xl space-y-4 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                        <div className="flex items-center gap-2">
+                          <BadgeCheck className="w-4 h-4 text-sky-400" />
+                          <h3 className="text-sm font-bold text-white uppercase font-mono">
+                            Approve Organizer: {approvingRequest.promoterName}
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setApprovingRequest(null)}
+                          className="text-neutral-400 hover:text-white p-1 rounded"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="text-xs text-neutral-300 font-mono space-y-1 bg-neutral-950 p-3 rounded-xl border border-neutral-800">
+                        <div>
+                          Applicant: <strong className="text-white">{approvingRequest.contactEmail}</strong>
+                        </div>
+                        <div>
+                          Instagram:{' '}
+                          <a
+                            href={approvingRequest.igUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-pink-400 hover:underline"
+                          >
+                            {approvingRequest.igUrl}
+                          </a>
+                        </div>
+                        <div>
+                          Note: <span className="text-neutral-400">{approvingRequest.note}</span>
+                        </div>
+                      </div>
+
+                      {/* Choose Link Option: Existing or New */}
+                      <div className="space-y-3">
+                        <label className="block text-xs font-mono uppercase text-neutral-400">
+                          Link to Promoter Profile:
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setApprovalMode('existing')}
+                            className={`py-2 px-3 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
+                              approvalMode === 'existing'
+                                ? 'bg-lime-400 text-black border-lime-400'
+                                : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'
+                            }`}
+                          >
+                            Link Existing Promoter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setApprovalMode('new')}
+                            className={`py-2 px-3 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
+                              approvalMode === 'new'
+                                ? 'bg-lime-400 text-black border-lime-400'
+                                : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'
+                            }`}
+                          >
+                            + Create New Verified Promoter
+                          </button>
+                        </div>
+
+                        {approvalMode === 'existing' ? (
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Choose Promoter <span className="text-lime-400">*</span>
+                            </label>
+                            <select
+                              value={selectedPromoterId}
+                              onChange={(e) => setSelectedPromoterId(e.target.value)}
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            >
+                              <option value="">Select promoter...</option>
+                              {promoters.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} {p.verified ? '✓' : ''} ({p.igUrl || 'no ig'})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-neutral-300 mb-1">
+                                New Promoter Name <span className="text-lime-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={newPromoterName}
+                                onChange={(e) => setNewPromoterName(e.target.value)}
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-neutral-300 mb-1">
+                                Promoter Instagram URL
+                              </label>
+                              <input
+                                type="url"
+                                value={newPromoterIgUrl}
+                                onChange={(e) => setNewPromoterIgUrl(e.target.value)}
+                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                              />
+                            </div>
+                            <p className="text-[11px] text-lime-400 font-mono">
+                              ✓ Automatically marked as verified: true
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => setApprovingRequest(null)}
+                          className="px-3 py-1.5 rounded-xl bg-neutral-800 text-xs font-medium text-neutral-400 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            isProcessingApproval ||
+                            (approvalMode === 'existing' && !selectedPromoterId)
+                          }
+                          onClick={handleConfirmApprove}
+                          className="px-4 py-2 rounded-xl bg-lime-400 text-black text-xs font-bold hover:bg-lime-300 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-md"
+                        >
+                          {isProcessingApproval && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                          <span>Confirm & Grant Organizer Access</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pending Requests Section */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-lime-400" />
+                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                          Pending Organizer Requests
+                        </h3>
+                      </div>
+                      <span className="text-xs font-mono text-neutral-400">
+                        {organizerRequests.filter((r) => r.status === 'pending').length} pending
+                      </span>
+                    </div>
+
+                    {organizerRequests.length === 0 ? (
+                      <div className="p-6 text-center rounded-2xl bg-neutral-900/40 border border-dashed border-neutral-800 text-neutral-500 text-xs font-mono">
+                        No organizer verification requests found.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {organizerRequests.map((req) => (
+                          <div
+                            key={req.id}
+                            className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-bold text-white truncate">{req.promoterName}</h4>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                    req.status === 'pending'
+                                      ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                      : req.status === 'approved'
+                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                      : 'bg-rose-950 text-rose-300 border border-rose-800'
+                                  }`}
+                                >
+                                  {req.status}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400 font-mono">
+                                <span>{req.contactEmail}</span>
+                                <span>•</span>
+                                <a
+                                  href={req.igUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-pink-400 hover:underline truncate max-w-[200px]"
+                                >
+                                  {req.igUrl}
+                                </a>
+                                <span>•</span>
+                                <span>{formatRelativeTime(req.createdAt)}</span>
+                              </div>
+
+                              <p className="text-xs text-neutral-300 bg-neutral-950/80 p-2 rounded-lg border border-neutral-800/80">
+                                <strong className="text-neutral-400">Note:</strong> {req.note}
+                              </p>
+                            </div>
+
+                            {/* Actions for pending */}
+                            {req.status === 'pending' && (
+                              <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartApprove(req)}
+                                  className="px-3 py-1.5 rounded-xl bg-lime-400 text-black text-xs font-bold hover:bg-lime-300 transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectRequest(req.id, req.promoterName)}
+                                  className="px-3 py-1.5 rounded-xl bg-neutral-800 text-rose-400 hover:bg-rose-950/40 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer border border-neutral-700 hover:border-rose-800"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Active Verified Organizers Section */}
+                  <div className="space-y-3 pt-4 border-t border-neutral-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-sky-400" />
+                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                          Active Verified Organizers
+                        </h3>
+                      </div>
+                      <span className="text-xs font-mono text-neutral-400">
+                        {activeOrganizers.length} active
+                      </span>
+                    </div>
+
+                    {activeOrganizers.length === 0 ? (
+                      <div className="p-6 text-center rounded-2xl bg-neutral-900/40 border border-dashed border-neutral-800 text-neutral-500 text-xs font-mono">
+                        No active organizers provisioned yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {activeOrganizers.map((org) => {
+                          const linkedPromoter = promoters.find((p) => p.id === org.promoterId);
+                          return (
+                            <div
+                              key={org.uid}
+                              className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-bold text-white truncate">
+                                    {linkedPromoter?.name || 'Promoter Profile'}
+                                  </h4>
+                                  <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
+                                  <span className="text-xs font-mono text-neutral-400 truncate">
+                                    ({org.email})
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                                  UID: {org.uid.slice(0, 10)}... • Approved{' '}
+                                  {formatRelativeTime(org.approvedAt)}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={revokingUid === org.uid}
+                                onClick={() => handleRevokeOrganizer(org.uid, org.email)}
+                                className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-rose-950/60 text-rose-400 border border-neutral-700 hover:border-rose-700 text-xs font-mono font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Revoke organizer rights"
+                              >
+                                {revokingUid === org.uid ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                                <span>Revoke</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

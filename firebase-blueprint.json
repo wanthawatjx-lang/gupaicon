@@ -169,7 +169,8 @@
         "statusSource": {
           "type": "string",
           "enum": [
-            "admin"
+            "admin",
+            "organizer"
           ],
           "description": "Source of status verification"
         },
@@ -198,6 +199,107 @@
         "statusUpdatedAt",
         "statusSource"
       ]
+    },
+    "report": {
+      "title": "Crowd Report",
+      "description": "A user-reported ticket availability status for an event",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "low",
+            "sold_out"
+          ],
+          "description": "User reported ticket status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the report"
+        }
+      },
+      "required": [
+        "status",
+        "createdAt"
+      ]
+    },
+    "organizerRequest": {
+      "title": "Organizer Application Request",
+      "description": "Application from a user to become a verified promoter organizer",
+      "type": "object",
+      "properties": {
+        "promoterName": {
+          "type": "string",
+          "description": "Name of the promoter collective",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "igUrl": {
+          "type": "string",
+          "description": "Official Instagram URL of the promoter",
+          "maxLength": 300
+        },
+        "contactEmail": {
+          "type": "string",
+          "description": "Contact email address",
+          "maxLength": 150
+        },
+        "note": {
+          "type": "string",
+          "description": "Verification instructions or proof note",
+          "maxLength": 1000
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ],
+          "description": "Status of the application request"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": [
+        "promoterName",
+        "igUrl",
+        "contactEmail",
+        "note",
+        "status",
+        "createdAt"
+      ]
+    },
+    "organizer": {
+      "title": "Approved Organizer Record",
+      "description": "Record linking a verified user UID to their managed promoter ID",
+      "type": "object",
+      "properties": {
+        "promoterId": {
+          "type": "string",
+          "description": "ID of the promoter managed by this user"
+        },
+        "email": {
+          "type": "string",
+          "description": "Email of the approved organizer",
+          "maxLength": 150
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when approved by admin"
+        }
+      },
+      "required": [
+        "promoterId",
+        "email",
+        "approvedAt"
+      ]
     }
   },
   "firestore": {
@@ -212,6 +314,18 @@
     "/events/{eventId}": {
       "schema": "event",
       "description": "Collection of upcoming livehouse shows and concerts"
+    },
+    "/events/{eventId}/reports/{uid}": {
+      "schema": "report",
+      "description": "User crowd-reported ticket status for an event"
+    },
+    "/organizerRequests/{uid}": {
+      "schema": "organizerRequest",
+      "description": "User applications for verified organizer status"
+    },
+    "/organizers/{uid}": {
+      "schema": "organizer",
+      "description": "Active organizers mapped to their promoter IDs"
     }
   }
 }

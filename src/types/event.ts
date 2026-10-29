@@ -14,7 +14,7 @@ export interface ConcertEvent {
   posterUrl?: string;
   status: EventStatus;
   statusUpdatedAt: string | number | { seconds: number; nanoseconds: number };
-  statusSource: 'admin';
+  statusSource: 'admin' | 'organizer';
   createdAt?: any;
   updatedAt?: any;
 }

@@ -48,7 +48,7 @@ export function subscribeToEvents(
           posterUrl: data.posterUrl ?? '',
           status: (data.status as EventStatus) || 'not_open',
           statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-          statusSource: 'admin',
+          statusSource: (data.statusSource as 'admin' | 'organizer') || 'admin',
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
         };
@@ -87,7 +87,7 @@ export async function fetchEvents(): Promise<ConcertEvent[]> {
         posterUrl: data.posterUrl ?? '',
         status: (data.status as EventStatus) || 'not_open',
         statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-        statusSource: 'admin',
+        statusSource: (data.statusSource as 'admin' | 'organizer') || 'admin',
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
       };
@@ -97,7 +97,11 @@ export async function fetchEvents(): Promise<ConcertEvent[]> {
   }
 }
 
-export async function createEvent(data: EventFormData, customId?: string): Promise<string> {
+export async function createEvent(
+  data: EventFormData,
+  customId?: string,
+  statusSource: 'admin' | 'organizer' = 'admin'
+): Promise<string> {
   const docId = customId || `event_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const docRef = doc(db, COLLECTION_NAME, docId);
   const path = `${COLLECTION_NAME}/${docId}`;
@@ -120,7 +124,7 @@ export async function createEvent(data: EventFormData, customId?: string): Promi
       igPostUrl: data.igPostUrl.trim(),
       status: data.status,
       statusUpdatedAt: serverTimestamp(),
-      statusSource: 'admin',
+      statusSource,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -136,13 +140,18 @@ export async function createEvent(data: EventFormData, customId?: string): Promi
   }
 }
 
-export async function updateEvent(id: string, data: Partial<EventFormData>): Promise<void> {
+export async function updateEvent(
+  id: string,
+  data: Partial<EventFormData>,
+  statusSource: 'admin' | 'organizer' = 'admin'
+): Promise<void> {
   const docRef = doc(db, COLLECTION_NAME, id);
   const path = `${COLLECTION_NAME}/${id}`;
 
   try {
     const payload: Record<string, any> = {
       updatedAt: serverTimestamp(),
+      statusSource,
     };
 
     if (data.title !== undefined) payload.title = data.title.trim();
@@ -166,7 +175,6 @@ export async function updateEvent(id: string, data: Partial<EventFormData>): Pro
     if (data.status !== undefined) {
       payload.status = data.status;
       payload.statusUpdatedAt = serverTimestamp();
-      payload.statusSource = 'admin';
     }
 
     await updateDoc(docRef, payload);
@@ -176,9 +184,13 @@ export async function updateEvent(id: string, data: Partial<EventFormData>): Pro
 }
 
 /**
- * One-tap status update for Admin (Requirement 6)
+ * One-tap status update for Admin or Organizer (Requirement 3 & 6)
  */
-export async function updateEventStatus(id: string, newStatus: EventStatus): Promise<void> {
+export async function updateEventStatus(
+  id: string,
+  newStatus: EventStatus,
+  statusSource: 'admin' | 'organizer' = 'admin'
+): Promise<void> {
   const docRef = doc(db, COLLECTION_NAME, id);
   const path = `${COLLECTION_NAME}/${id}`;
 
@@ -186,7 +198,7 @@ export async function updateEventStatus(id: string, newStatus: EventStatus): Pro
     await updateDoc(docRef, {
       status: newStatus,
       statusUpdatedAt: serverTimestamp(),
-      statusSource: 'admin',
+      statusSource,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {

@@ -145,3 +145,14 @@ export function isEventUpcoming(val: any): boolean {
   const threshold = Date.now() - 4 * 3600 * 1000;
   return date.getTime() >= threshold;
 }
+
+/**
+ * Format a Date object into YYYY-MM-DDTHH:mm string for datetime-local inputs
+ */
+export function formatDateForInput(date: Date): string {
+  const localIso = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+  return localIso;
+}
+
