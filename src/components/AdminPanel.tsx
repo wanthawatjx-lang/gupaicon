@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { auth, googleProvider, signInWithPopup, signOut, isUserAdmin, ADMIN_EMAILS } from '../firebase';
+import { auth, googleProvider, signInWithPopup, signOut, isUserAdmin, ADMIN_EMAIL } from '../firebase';
 import { Venue, VenueFormData } from '../types/venue';
+import { Promoter, PromoterFormData } from '../types/promoter';
+import { ConcertEvent, EventFormData, EventStatus } from '../types/event';
 import { createVenue, updateVenue, deleteVenue, seedSampleVenues } from '../services/venueService';
+import { createPromoter, updatePromoter, deletePromoter, seedSamplePromoters } from '../services/promoterService';
+import { createEvent, updateEvent, updateEventStatus, deleteEvent, seedSampleEvents } from '../services/eventService';
+import { STATUS_MAP } from '../utils/statusUtils';
+import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
 import {
   Lock,
   LogOut,
@@ -17,33 +23,45 @@ import {
   Database,
   CheckCircle2,
   RefreshCw,
-  Search
+  Search,
+  BadgeCheck,
+  Calendar,
+  Layers,
+  Music2,
+  Users,
 } from 'lucide-react';
 
 interface AdminPanelProps {
   user: User | null;
   venues: Venue[];
+  promoters: Promoter[];
+  events: ConcertEvent[];
   onClose: () => void;
   editingVenueInitial?: Venue | null;
 }
 
+type AdminTab = 'events' | 'venues' | 'promoters';
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
   venues,
+  promoters,
+  events,
   onClose,
   editingVenueInitial = null,
 }) => {
+  const [activeTab, setActiveTab] = useState<AdminTab>(editingVenueInitial ? 'venues' : 'events');
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Form state
-  const [isFormOpen, setIsFormOpen] = useState(Boolean(editingVenueInitial));
+  // Venue form state
+  const [isVenueFormOpen, setIsVenueFormOpen] = useState(Boolean(editingVenueInitial));
   const [editingVenueId, setEditingVenueId] = useState<string | null>(
     editingVenueInitial ? editingVenueInitial.id : null
   );
-  const [formData, setFormData] = useState<VenueFormData>({
+  const [venueFormData, setVenueFormData] = useState<VenueFormData>({
     name: editingVenueInitial?.name || '',
     lat: editingVenueInitial?.lat ?? 13.80,
     lng: editingVenueInitial?.lng ?? 100.55,
@@ -51,14 +69,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     igUrl: editingVenueInitial?.igUrl || '',
     mapsUrl: editingVenueInitial?.mapsUrl || '',
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Deletion state
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Promoter form state
+  const [isPromoterFormOpen, setIsPromoterFormOpen] = useState(false);
+  const [editingPromoterId, setEditingPromoterId] = useState<string | null>(null);
+  const [promoterFormData, setPromoterFormData] = useState<PromoterFormData>({
+    name: '',
+    igUrl: '',
+    verified: false,
+  });
+
+  // Event form state
+  const [isEventFormOpen, setIsEventFormOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [eventFormData, setEventFormData] = useState<EventFormData>({
+    title: '',
+    artists: [''],
+    venueId: venues[0]?.id || '',
+    promoterId: promoters[0]?.id || '',
+    startAtIso: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+    priceText: '350 THB',
+    genres: ['Indie Rock'],
+    ticketUrl: '',
+    igPostUrl: '',
+    posterUrl: '',
+    status: 'available',
+  });
+
+  // Deletion modal state
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'venue' | 'promoter' | 'event';
+    id: string;
+    title: string;
+  } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Seeding state
-  const [isSeeding, setIsSeeding] = useState(false);
+  // Status updating map for one-tap feedback
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+
+  // Submitting / Seeding loading states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSeedingAll, setIsSeedingAll] = useState(false);
 
   const isAdmin = user ? isUserAdmin(user.email) : false;
 
@@ -84,9 +135,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleOpenAddForm = () => {
+  // --- Seed All Sample Data ---
+  const handleSeedAll = async () => {
+    setIsSeedingAll(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const venuesCount = await seedSampleVenues();
+      const promotersCount = await seedSamplePromoters();
+      const eventsCount = await seedSampleEvents();
+      setSuccessMessage(
+        `Seeded ${venuesCount} venues, ${promotersCount} promoters, and ${eventsCount} events successfully!`
+      );
+    } catch (err: any) {
+      console.error('Seed all error:', err);
+      setErrorMessage(err?.message || 'Failed to seed sample data. Verify admin permissions.');
+    } finally {
+      setIsSeedingAll(false);
+    }
+  };
+
+  // --- One-tap Event Status Switcher (Requirement 6) ---
+  const handleQuickStatusChange = async (eventId: string, newStatus: EventStatus) => {
+    setStatusUpdatingId(eventId);
+    setErrorMessage(null);
+    try {
+      await updateEventStatus(eventId, newStatus);
+      setSuccessMessage(`Updated event status to "${STATUS_MAP[newStatus].label}"`);
+    } catch (err: any) {
+      console.error('Failed to update event status:', err);
+      setErrorMessage(err?.message || 'Failed to update event status.');
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
+  // --- Venue Form Actions ---
+  const handleOpenAddVenue = () => {
     setEditingVenueId(null);
-    setFormData({
+    setVenueFormData({
       name: '',
       lat: 13.80,
       lng: 100.55,
@@ -95,161 +182,212 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       mapsUrl: '',
     });
     setErrorMessage(null);
-    setIsFormOpen(true);
+    setIsVenueFormOpen(true);
   };
 
-  const handleOpenEditForm = (venue: Venue) => {
-    setEditingVenueId(venue.id);
-    setFormData({
-      name: venue.name,
-      lat: venue.lat,
-      lng: venue.lng,
-      address: venue.address,
-      igUrl: venue.igUrl,
-      mapsUrl: venue.mapsUrl,
+  const handleOpenEditVenue = (v: Venue) => {
+    setEditingVenueId(v.id);
+    setVenueFormData({
+      name: v.name,
+      lat: v.lat,
+      lng: v.lng,
+      address: v.address,
+      igUrl: v.igUrl,
+      mapsUrl: v.mapsUrl,
     });
     setErrorMessage(null);
-    setIsFormOpen(true);
+    setIsVenueFormOpen(true);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
+  const handleVenueFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    // Validation
-    if (!formData.name.trim()) {
-      setErrorMessage('Venue name is required.');
-      return;
-    }
-    if (isNaN(Number(formData.lat)) || isNaN(Number(formData.lng))) {
-      setErrorMessage('Valid numeric coordinates (Latitude and Longitude) are required.');
-      return;
-    }
-    if (!formData.address.trim()) {
-      setErrorMessage('Venue address is required.');
-      return;
-    }
-
-    // Default map URL if empty
-    let mapsUrl = formData.mapsUrl.trim();
-    if (!mapsUrl) {
-      mapsUrl = `https://maps.google.com/?q=${formData.lat},${formData.lng}`;
-    }
-
-    let igUrl = formData.igUrl.trim();
-    if (!igUrl) {
-      igUrl = 'https://instagram.com';
-    }
-
+    if (!venueFormData.name.trim()) return setErrorMessage('Venue name is required.');
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       if (editingVenueId) {
-        await updateVenue(editingVenueId, {
-          name: formData.name,
-          lat: Number(formData.lat),
-          lng: Number(formData.lng),
-          address: formData.address,
-          igUrl,
-          mapsUrl,
-        });
-        setSuccessMessage(`Updated "${formData.name}" successfully!`);
+        await updateVenue(editingVenueId, venueFormData);
+        setSuccessMessage(`Updated venue "${venueFormData.name}"!`);
       } else {
-        await createVenue({
-          name: formData.name,
-          lat: Number(formData.lat),
-          lng: Number(formData.lng),
-          address: formData.address,
-          igUrl,
-          mapsUrl,
-        });
-        setSuccessMessage(`Added "${formData.name}" successfully!`);
+        await createVenue(venueFormData);
+        setSuccessMessage(`Created venue "${venueFormData.name}"!`);
       }
-      setIsFormOpen(false);
-      setEditingVenueId(null);
+      setIsVenueFormOpen(false);
     } catch (err: any) {
-      console.error('Save venue error:', err);
       setErrorMessage(err?.message || 'Failed to save venue.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!deletingId) return;
+  // --- Promoter Form Actions ---
+  const handleOpenAddPromoter = () => {
+    setEditingPromoterId(null);
+    setPromoterFormData({ name: '', igUrl: '', verified: false });
+    setErrorMessage(null);
+    setIsPromoterFormOpen(true);
+  };
+
+  const handleOpenEditPromoter = (p: Promoter) => {
+    setEditingPromoterId(p.id);
+    setPromoterFormData({ name: p.name, igUrl: p.igUrl, verified: p.verified });
+    setErrorMessage(null);
+    setIsPromoterFormOpen(true);
+  };
+
+  const handlePromoterFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoterFormData.name.trim()) return setErrorMessage('Promoter name is required.');
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      if (editingPromoterId) {
+        await updatePromoter(editingPromoterId, promoterFormData);
+        setSuccessMessage(`Updated promoter "${promoterFormData.name}"!`);
+      } else {
+        await createPromoter(promoterFormData);
+        setSuccessMessage(`Created promoter "${promoterFormData.name}"!`);
+      }
+      setIsPromoterFormOpen(false);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to save promoter.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Event Form Actions ---
+  const handleOpenAddEvent = () => {
+    setEditingEventId(null);
+    setEventFormData({
+      title: '',
+      artists: [''],
+      venueId: venues[0]?.id || '',
+      promoterId: promoters[0]?.id || '',
+      startAtIso: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+      priceText: '350 THB',
+      genres: ['Indie Rock'],
+      ticketUrl: '',
+      igPostUrl: '',
+      posterUrl: '',
+      status: 'available',
+    });
+    setErrorMessage(null);
+    setIsEventFormOpen(true);
+  };
+
+  const handleOpenEditEvent = (ev: ConcertEvent) => {
+    setEditingEventId(ev.id);
+    const dateObj = parseTimestampToDate(ev.startAt);
+    const localIso = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+
+    setEventFormData({
+      title: ev.title,
+      artists: ev.artists.length > 0 ? ev.artists : [''],
+      venueId: ev.venueId,
+      promoterId: ev.promoterId,
+      startAtIso: localIso,
+      priceText: ev.priceText,
+      genres: ev.genres.length > 0 ? ev.genres : ['Indie'],
+      ticketUrl: ev.ticketUrl,
+      igPostUrl: ev.igPostUrl,
+      posterUrl: ev.posterUrl || '',
+      status: ev.status,
+    });
+    setErrorMessage(null);
+    setIsEventFormOpen(true);
+  };
+
+  const handleEventFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventFormData.title.trim()) return setErrorMessage('Event title is required.');
+    if (!eventFormData.venueId) return setErrorMessage('Venue selection is required.');
+    if (!eventFormData.promoterId) return setErrorMessage('Promoter selection is required.');
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      if (editingEventId) {
+        await updateEvent(editingEventId, eventFormData);
+        setSuccessMessage(`Updated event "${eventFormData.title}"!`);
+      } else {
+        await createEvent(eventFormData);
+        setSuccessMessage(`Created event "${eventFormData.title}"!`);
+      }
+      setIsEventFormOpen(false);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to save event.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Deletion Execution ---
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
     setIsDeleting(true);
     setErrorMessage(null);
     try {
-      await deleteVenue(deletingId);
-      setSuccessMessage('Venue deleted.');
-      setDeletingId(null);
+      if (deleteTarget.type === 'venue') {
+        await deleteVenue(deleteTarget.id);
+      } else if (deleteTarget.type === 'promoter') {
+        await deletePromoter(deleteTarget.id);
+      } else if (deleteTarget.type === 'event') {
+        await deleteEvent(deleteTarget.id);
+      }
+      setSuccessMessage(`Deleted ${deleteTarget.type} successfully.`);
+      setDeleteTarget(null);
     } catch (err: any) {
-      console.error('Delete venue error:', err);
-      setErrorMessage(err?.message || 'Failed to delete venue.');
+      setErrorMessage(err?.message || 'Failed to delete item.');
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const handleSeedVenues = async () => {
-    setIsSeeding(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const count = await seedSampleVenues();
-      setSuccessMessage(`Successfully seeded ${count} sample venues!`);
-    } catch (err: any) {
-      console.error('Seed error:', err);
-      setErrorMessage(err?.message || 'Failed to seed sample venues. Check admin permissions.');
-    } finally {
-      setIsSeeding(false);
-    }
-  };
-
-  const filteredVenues = venues.filter((v) =>
-    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.address.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
-    <div className="fixed inset-0 z-1050 bg-black/80 backdrop-blur-md flex flex-col items-center justify-start sm:p-4 overflow-y-auto">
-      {/* Container */}
-      <div className="w-full max-w-2xl bg-neutral-950 border border-neutral-800 rounded-none sm:rounded-2xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:max-h-[92vh] overflow-hidden my-auto">
+    <div className="fixed inset-0 z-1150 bg-black/85 backdrop-blur-md flex flex-col items-center justify-start sm:p-4 overflow-y-auto">
+      {/* Modal Container */}
+      <div className="w-full max-w-3xl bg-neutral-950 border border-neutral-800 rounded-none sm:rounded-3xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:max-h-[94vh] overflow-hidden my-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-900/60 sticky top-0 z-20 backdrop-blur-md">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800 bg-neutral-900/80 sticky top-0 z-30 backdrop-blur-md">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-lime-400 text-black flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-lime-400 text-black flex items-center justify-center font-bold shadow-md">
               <Lock className="w-4 h-4" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-wide uppercase font-mono">
+              <h1 className="text-sm font-bold text-white tracking-wider uppercase font-mono">
                 Admin Console
               </h1>
-              <p className="text-xs text-neutral-400">gupaicon livehouse database</p>
+              <p className="text-[11px] text-neutral-400">gupaicon livehouse database</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-            aria-label="Close admin modal"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+              aria-label="Close admin modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4">
           {/* Status Banners */}
           {errorMessage && (
-            <div className="mb-4 p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-start gap-2">
+            <div className="p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
           {successMessage && (
-            <div className="mb-4 p-3 rounded-lg bg-lime-950/80 border border-lime-800 text-lime-200 text-xs flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-lime-400 shrink-0 mt-0.5" />
+            <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-200 text-xs flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <span>{successMessage}</span>
             </div>
           )}
@@ -260,11 +398,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4 text-neutral-400">
                 <Lock className="w-8 h-8" />
               </div>
-              <h2 className="text-xl font-bold text-white mb-2">Restricted Area</h2>
+              <h2 className="text-xl font-bold text-white mb-2 font-display">Restricted Area</h2>
               <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
-                Management of venues requires Google Authentication. Only authorized admin (
-                <span className="text-lime-400 font-mono">wantawachjz@gmail.com</span>) can perform
-                writes.
+                Management of livehouse venues, promoters, and events requires Google Authentication.
+                Only authorized admin (<span className="text-lime-400 font-mono">{ADMIN_EMAIL}</span>)
+                is permitted to write.
               </p>
 
               <button
@@ -311,8 +449,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Signed in as: <strong className="text-white font-mono">{user.email}</strong>
               </p>
               <p className="text-neutral-400 text-xs mb-6">
-                Only <span className="text-lime-400 font-mono font-bold">wantawachjz@gmail.com</span>{' '}
-                is permitted to modify venues.
+                Only <span className="text-lime-400 font-mono font-bold">{ADMIN_EMAIL}</span> is
+                authorized to modify livehouse data.
               </p>
               <button
                 type="button"
@@ -328,336 +466,874 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           {/* If Logged in AND IS Admin */}
           {user && isAdmin && (
             <div>
-              {/* Admin profile bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs">
+              {/* Admin Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-4 rounded-2xl bg-neutral-900 border border-neutral-800 text-xs">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
                   <span className="text-neutral-400">Admin:</span>
-                  <span className="font-mono text-lime-400 font-medium">{user.email}</span>
+                  <span className="font-mono text-lime-400 font-bold">{user.email}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="flex items-center gap-1.5 text-neutral-400 hover:text-white px-2 py-1 rounded hover:bg-neutral-800 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
 
-              {/* Action Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleOpenAddForm}
-                    className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-semibold text-xs hover:bg-lime-300 active:scale-95 transition-all cursor-pointer shadow-md"
+                    onClick={handleSeedAll}
+                    disabled={isSeedingAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 text-xs font-mono transition-colors disabled:opacity-50 cursor-pointer"
+                    title="Seed 3 sample venues, 2 sample promoters, and 4 sample events"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Add Venue</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSeedVenues}
-                    disabled={isSeeding}
-                    className="flex items-center gap-2 py-2.5 px-3.5 rounded-xl bg-neutral-900 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-medium active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                    title="Load sample venues from data/seed/venues.json"
-                  >
-                    {isSeeding ? (
+                    {isSeedingAll ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin text-lime-400" />
                     ) : (
                       <Database className="w-3.5 h-3.5 text-lime-400" />
                     )}
-                    <span>Seed Sample Venues</span>
+                    <span>Seed All Samples</span>
                   </button>
-                </div>
 
-                <div className="relative w-full sm:w-48">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search venues..."
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600"
-                  />
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="flex items-center gap-1 text-neutral-400 hover:text-white px-2 py-1 rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Form Modal / Inline Section */}
-              {isFormOpen && (
-                <div className="mb-6 p-4 rounded-xl bg-neutral-900/90 border border-lime-400/40 shadow-xl animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-lime-400" />
-                      {editingVenueId ? 'Edit Venue' : 'Create New Venue'}
-                    </h3>
+              {/* Navigation Tabs (Events / Venues / Promoters) */}
+              <div className="flex items-center gap-1 p-1 rounded-2xl bg-neutral-900/80 border border-neutral-800 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('events');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'events'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <Music2 className="w-3.5 h-3.5" />
+                  <span>Events ({events.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('venues');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'venues'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Venues ({venues.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('promoters');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'promoters'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Promoters ({promoters.length})</span>
+                </button>
+              </div>
+
+              {/* ==================== TAB 1: EVENTS ==================== */}
+              {activeTab === 'events' && (
+                <div className="space-y-4">
+                  {/* Actions Header */}
+                  <div className="flex items-center justify-between gap-3">
                     <button
                       type="button"
-                      onClick={() => setIsFormOpen(false)}
-                      className="text-neutral-400 hover:text-white p-1 rounded"
+                      onClick={handleOpenAddEvent}
+                      className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-bold text-xs hover:bg-lime-300 transition-all cursor-pointer shadow-md"
                     >
-                      <X className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
+                      <span>New Event</span>
                     </button>
-                  </div>
 
-                  <form onSubmit={handleFormSubmit} className="space-y-3">
-                    {/* Name */}
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-300 mb-1">
-                        Venue Name <span className="text-lime-400">*</span>
-                      </label>
+                    <div className="relative w-full max-w-xs">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                       <input
                         type="text"
-                        required
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="e.g. De Commune / Blueprint Livehouse / SAMPLE Rock Bar"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search events or artists..."
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
                       />
                     </div>
+                  </div>
 
-                    {/* Coordinates Grid */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-neutral-300 mb-1">
-                          Latitude <span className="text-lime-400">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          step="any"
-                          required
-                          value={formData.lat}
-                          onChange={(e) =>
-                            setFormData({ ...formData, lat: parseFloat(e.target.value) || 0 })
-                          }
-                          placeholder="e.g. 13.8050"
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
-                        />
+                  {/* Event Form (Create / Edit) */}
+                  {isEventFormOpen && (
+                    <div className="p-4 rounded-2xl bg-neutral-900/90 border border-lime-400/50 shadow-2xl animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
+                        <h3 className="text-sm font-bold text-white uppercase font-mono flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-lime-400" />
+                          {editingEventId ? 'Edit Event' : 'Create Concert Event'}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setIsEventFormOpen(false)}
+                          className="text-neutral-400 hover:text-white p-1 rounded"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-neutral-300 mb-1">
-                          Longitude <span className="text-lime-400">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          step="any"
-                          required
-                          value={formData.lng}
-                          onChange={(e) =>
-                            setFormData({ ...formData, lng: parseFloat(e.target.value) || 0 })
-                          }
-                          placeholder="e.g. 100.5500"
-                          className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
-                        />
-                      </div>
-                    </div>
 
-                    {/* Quick Coord Presets */}
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <span className="text-[10px] text-neutral-500 font-mono">Presets:</span>
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, lat: 13.7563, lng: 100.5018 })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
-                      >
-                        BKK Center
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, lat: 13.805, lng: 100.55 })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
-                      >
-                        Bang Sue
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, lat: 13.989, lng: 100.617 })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
-                      >
-                        Rangsit
-                      </button>
-                    </div>
+                      <form onSubmit={handleEventFormSubmit} className="space-y-3">
+                        {/* Title */}
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Event Title <span className="text-lime-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={eventFormData.title}
+                            onChange={(e) =>
+                              setEventFormData({ ...eventFormData, title: e.target.value })
+                            }
+                            placeholder="e.g. Bangkok Math Rock Night Vol. 1"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
 
-                    {/* Address */}
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-300 mb-1">
-                        Address / Area <span className="text-lime-400">*</span>
-                      </label>
-                      <textarea
-                        required
-                        rows={2}
-                        value={formData.address}
-                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        placeholder="e.g. 888 Thonglor Rd, Watthana, Bangkok 10110"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                      />
-                    </div>
+                        {/* Dropdowns for Venue and Promoter (Requirement 6) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Venue Dropdown */}
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Venue <span className="text-lime-400">*</span>
+                            </label>
+                            <select
+                              required
+                              value={eventFormData.venueId}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, venueId: e.target.value })
+                              }
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            >
+                              <option value="">Select a venue...</option>
+                              {venues.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                    {/* IG URL */}
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-300 mb-1">
-                        Instagram URL
-                      </label>
-                      <input
-                        type="url"
-                        value={formData.igUrl}
-                        onChange={(e) => setFormData({ ...formData, igUrl: e.target.value })}
-                        placeholder="https://instagram.com/venue_handle"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                      />
-                    </div>
+                          {/* Promoter Dropdown */}
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Promoter / Collective <span className="text-lime-400">*</span>
+                            </label>
+                            <select
+                              required
+                              value={eventFormData.promoterId}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, promoterId: e.target.value })
+                              }
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            >
+                              <option value="">Select a promoter...</option>
+                              {promoters.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} {p.verified ? '✓' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
 
-                    {/* Maps URL */}
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-300 mb-1">
-                        Maps URL (Google / Apple Maps)
-                      </label>
-                      <input
-                        type="url"
-                        value={formData.mapsUrl}
-                        onChange={(e) => setFormData({ ...formData, mapsUrl: e.target.value })}
-                        placeholder="https://maps.google.com/?q=..."
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                      />
-                    </div>
+                        {/* Date/Time and Price */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Start Date & Time (Bangkok) <span className="text-lime-400">*</span>
+                            </label>
+                            <input
+                              type="datetime-local"
+                              required
+                              value={eventFormData.startAtIso}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, startAtIso: e.target.value })
+                              }
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Price Text <span className="text-lime-400">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={eventFormData.priceText}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, priceText: e.target.value })
+                              }
+                              placeholder="e.g. 350 THB (door: 450 THB)"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                        </div>
 
-                    {/* Submit Actions */}
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsFormOpen(false)}
-                        className="px-3.5 py-2 rounded-lg text-xs font-medium text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="px-4 py-2 rounded-lg text-xs font-bold text-black bg-lime-400 hover:bg-lime-300 transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md"
-                      >
-                        {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                        <span>{editingVenueId ? 'Save Changes' : 'Create Venue'}</span>
-                      </button>
+                        {/* Artists (Comma separated) */}
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Artists / Lineup (comma-separated) <span className="text-lime-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={eventFormData.artists.join(', ')}
+                            onChange={(e) =>
+                              setEventFormData({
+                                ...eventFormData,
+                                artists: e.target.value.split(',').map((s) => s.trim()),
+                              })
+                            }
+                            placeholder="e.g. Band A, Band B, Guest DJ"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        {/* Genres (Comma separated) */}
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Genres (comma-separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={eventFormData.genres.join(', ')}
+                            onChange={(e) =>
+                              setEventFormData({
+                                ...eventFormData,
+                                genres: e.target.value.split(',').map((s) => s.trim()),
+                              })
+                            }
+                            placeholder="e.g. Math Rock, Post-Rock, Shoegaze"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        {/* URLs */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Ticket URL
+                            </label>
+                            <input
+                              type="url"
+                              value={eventFormData.ticketUrl}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, ticketUrl: e.target.value })
+                              }
+                              placeholder="https://ticketmelon.com/..."
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Instagram Post URL
+                            </label>
+                            <input
+                              type="url"
+                              value={eventFormData.igPostUrl}
+                              onChange={(e) =>
+                                setEventFormData({ ...eventFormData, igPostUrl: e.target.value })
+                              }
+                              placeholder="https://instagram.com/p/..."
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Poster URL */}
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Poster Image URL (optional)
+                          </label>
+                          <input
+                            type="url"
+                            value={eventFormData.posterUrl}
+                            onChange={(e) =>
+                              setEventFormData({ ...eventFormData, posterUrl: e.target.value })
+                            }
+                            placeholder="https://images.unsplash.com/..."
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        {/* Initial Status */}
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Status
+                          </label>
+                          <select
+                            value={eventFormData.status}
+                            onChange={(e) =>
+                              setEventFormData({
+                                ...eventFormData,
+                                status: e.target.value as EventStatus,
+                              })
+                            }
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          >
+                            <option value="available">Available (Tickets on sale)</option>
+                            <option value="low">Low (Tickets running out)</option>
+                            <option value="sold_out">Sold out</option>
+                            <option value="not_open">Not open yet</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </div>
+
+                        {/* Submit Actions */}
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsEventFormOpen(false)}
+                            className="px-3.5 py-2 rounded-xl text-xs font-medium text-neutral-400 hover:text-white bg-neutral-800 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-black bg-lime-400 hover:bg-lime-300 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{editingEventId ? 'Save Event' : 'Create Event'}</span>
+                          </button>
+                        </div>
+                      </form>
                     </div>
-                  </form>
+                  )}
+
+                  {/* Events List with One-Tap Status Switcher */}
+                  <div className="space-y-3">
+                    {events
+                      .filter(
+                        (ev) =>
+                          ev.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          ev.artists.some((a) =>
+                            a.toLowerCase().includes(searchQuery.toLowerCase())
+                          )
+                      )
+                      .map((ev) => {
+                        const hostVenue = venues.find((v) => v.id === ev.venueId);
+                        const hostPromoter = promoters.find((p) => p.id === ev.promoterId);
+                        const statusInfo = STATUS_MAP[ev.status] || STATUS_MAP.not_open;
+                        const isUpdatingThis = statusUpdatingId === ev.id;
+
+                        return (
+                          <div
+                            key={ev.id}
+                            className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-bold text-white truncate">{ev.title}</h4>
+                                {ev.title.toUpperCase().startsWith('SAMPLE') && (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-600/40 text-[9px] font-mono text-amber-300">
+                                    SAMPLE
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400 font-mono">
+                                <span>{formatBangkokDateTime(ev.startAt)}</span>
+                                <span>•</span>
+                                <span className="text-lime-400 truncate max-w-[140px]">
+                                  {hostVenue?.name || 'Unknown Venue'}
+                                </span>
+                                <span>•</span>
+                                <span className="text-neutral-300 truncate max-w-[120px]">
+                                  {hostPromoter?.name || 'Independent'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-xs text-neutral-400">
+                                <span className="truncate max-w-[240px]">
+                                  {ev.artists.join(', ')}
+                                </span>
+                                <span>({ev.priceText})</span>
+                              </div>
+                            </div>
+
+                            {/* One-Tap Status Selector + Actions */}
+                            <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-800/80">
+                              {/* One-Tap Status Select Dropdown (Requirement 6) */}
+                              <div className="relative">
+                                <select
+                                  value={ev.status}
+                                  disabled={isUpdatingThis}
+                                  onChange={(e) =>
+                                    handleQuickStatusChange(ev.id, e.target.value as EventStatus)
+                                  }
+                                  className={`text-xs font-mono font-bold px-2.5 py-1.5 rounded-xl border appearance-none pr-7 cursor-pointer transition-all ${statusInfo.badgeClass}`}
+                                >
+                                  <option value="available">● Available</option>
+                                  <option value="low">● Low</option>
+                                  <option value="sold_out">● Sold out</option>
+                                  <option value="not_open">● Not open</option>
+                                  <option value="cancelled">● Cancelled</option>
+                                </select>
+                                {isUpdatingThis && (
+                                  <RefreshCw className="w-3 h-3 animate-spin text-lime-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                )}
+                              </div>
+
+                              {/* Edit & Delete */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditEvent(ev)}
+                                className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                                title="Edit Event"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({ type: 'event', id: ev.id, title: ev.title })
+                                }
+                                className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
+                                title="Delete Event"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
               )}
 
-              {/* Venues List */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-neutral-400 mb-2 px-1">
-                  <span>
-                    Venues ({filteredVenues.length} of {venues.length})
-                  </span>
-                  <span className="font-mono text-[10px] text-neutral-500">
-                    Collection: /venues
-                  </span>
-                </div>
+              {/* ==================== TAB 2: VENUES ==================== */}
+              {activeTab === 'venues' && (
+                <div className="space-y-4">
+                  {/* Actions Header */}
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleOpenAddVenue}
+                      className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-bold text-xs hover:bg-lime-300 transition-all cursor-pointer shadow-md"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>New Venue</span>
+                    </button>
 
-                {filteredVenues.length === 0 ? (
-                  <div className="p-8 text-center border border-dashed border-neutral-800 rounded-xl text-neutral-500 text-xs">
-                    No venues found. Click "Add Venue" or "Seed Sample Venues" above.
+                    <div className="relative w-full max-w-xs">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search venues..."
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
+                      />
+                    </div>
                   </div>
-                ) : (
-                  filteredVenues.map((venue) => {
-                    const isSample = venue.name.toUpperCase().startsWith('SAMPLE');
-                    return (
-                      <div
-                        key={venue.id}
-                        className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800/80 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="text-sm font-bold text-white truncate">{venue.name}</h4>
-                            {isSample && (
-                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-600/40 text-[9px] font-mono text-amber-300">
-                                SAMPLE
-                              </span>
-                            )}
+
+                  {/* Venue Form */}
+                  {isVenueFormOpen && (
+                    <div className="p-4 rounded-2xl bg-neutral-900/90 border border-lime-400/50 shadow-2xl animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
+                        <h3 className="text-sm font-bold text-white uppercase font-mono flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-lime-400" />
+                          {editingVenueId ? 'Edit Venue' : 'Create Venue'}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setIsVenueFormOpen(false)}
+                          className="text-neutral-400 hover:text-white p-1 rounded"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleVenueFormSubmit} className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Venue Name <span className="text-lime-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={venueFormData.name}
+                            onChange={(e) =>
+                              setVenueFormData({ ...venueFormData, name: e.target.value })
+                            }
+                            placeholder="e.g. De Commune / Speakerbox"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Latitude <span className="text-lime-400">*</span>
+                            </label>
+                            <input
+                              type="number"
+                              step="any"
+                              required
+                              value={venueFormData.lat}
+                              onChange={(e) =>
+                                setVenueFormData({
+                                  ...venueFormData,
+                                  lat: parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
+                            />
                           </div>
-                          <p className="text-xs text-neutral-400 truncate mb-1">{venue.address}</p>
-                          <div className="flex items-center gap-3 text-[11px] font-mono text-neutral-500">
-                            <span>
-                              {venue.lat.toFixed(4)}, {venue.lng.toFixed(4)}
-                            </span>
-                            {venue.mapsUrl && (
-                              <a
-                                href={venue.mapsUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="hover:text-lime-400 flex items-center gap-0.5"
-                              >
-                                <ExternalLink className="w-3 h-3" /> Maps
-                              </a>
-                            )}
-                            {venue.igUrl && (
-                              <a
-                                href={venue.igUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="hover:text-pink-400 flex items-center gap-0.5"
-                              >
-                                <Instagram className="w-3 h-3" /> IG
-                              </a>
-                            )}
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Longitude <span className="text-lime-400">*</span>
+                            </label>
+                            <input
+                              type="number"
+                              step="any"
+                              required
+                              value={venueFormData.lng}
+                              onChange={(e) =>
+                                setVenueFormData({
+                                  ...venueFormData,
+                                  lng: parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
+                            />
                           </div>
                         </div>
 
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Address / Area <span className="text-lime-400">*</span>
+                          </label>
+                          <textarea
+                            required
+                            rows={2}
+                            value={venueFormData.address}
+                            onChange={(e) =>
+                              setVenueFormData({ ...venueFormData, address: e.target.value })
+                            }
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Instagram URL
+                            </label>
+                            <input
+                              type="url"
+                              value={venueFormData.igUrl}
+                              onChange={(e) =>
+                                setVenueFormData({ ...venueFormData, igUrl: e.target.value })
+                              }
+                              placeholder="https://instagram.com/..."
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Maps URL
+                            </label>
+                            <input
+                              type="url"
+                              value={venueFormData.mapsUrl}
+                              onChange={(e) =>
+                                setVenueFormData({ ...venueFormData, mapsUrl: e.target.value })
+                              }
+                              placeholder="https://maps.google.com/?q=..."
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
                           <button
                             type="button"
-                            onClick={() => handleOpenEditForm(venue)}
-                            className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
-                            title="Edit"
+                            onClick={() => setIsVenueFormOpen(false)}
+                            className="px-3.5 py-2 rounded-xl text-xs font-medium text-neutral-400 hover:text-white bg-neutral-800 transition-colors"
                           >
-                            <Edit className="w-4 h-4" />
+                            Cancel
                           </button>
                           <button
-                            type="button"
-                            onClick={() => setDeletingId(venue.id)}
-                            className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors"
-                            title="Delete"
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-black bg-lime-400 hover:bg-lime-300 transition-all flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{editingVenueId ? 'Save Venue' : 'Create Venue'}</span>
                           </button>
                         </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Venues List */}
+                  <div className="space-y-2">
+                    {venues
+                      .filter((v) => v.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map((venue) => (
+                        <div
+                          key={venue.id}
+                          className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-sm font-bold text-white truncate">{venue.name}</h4>
+                            <p className="text-xs text-neutral-400 truncate">{venue.address}</p>
+                            <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                              {venue.lat.toFixed(4)}, {venue.lng.toFixed(4)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditVenue(venue)}
+                              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({ type: 'venue', id: venue.id, title: venue.name })
+                              }
+                              className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ==================== TAB 3: PROMOTERS ==================== */}
+              {activeTab === 'promoters' && (
+                <div className="space-y-4">
+                  {/* Actions Header */}
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleOpenAddPromoter}
+                      className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-bold text-xs hover:bg-lime-300 transition-all cursor-pointer shadow-md"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>New Promoter</span>
+                    </button>
+
+                    <div className="relative w-full max-w-xs">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search promoters..."
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Promoter Form */}
+                  {isPromoterFormOpen && (
+                    <div className="p-4 rounded-2xl bg-neutral-900/90 border border-lime-400/50 shadow-2xl animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
+                        <h3 className="text-sm font-bold text-white uppercase font-mono flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-lime-400" />
+                          {editingPromoterId ? 'Edit Promoter' : 'Create Promoter'}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setIsPromoterFormOpen(false)}
+                          className="text-neutral-400 hover:text-white p-1 rounded"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+
+                      <form onSubmit={handlePromoterFormSubmit} className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Promoter Name <span className="text-lime-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={promoterFormData.name}
+                            onChange={(e) =>
+                              setPromoterFormData({ ...promoterFormData, name: e.target.value })
+                            }
+                            placeholder="e.g. Loud Wave Collective / DIY Sounds"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Instagram URL
+                          </label>
+                          <input
+                            type="url"
+                            value={promoterFormData.igUrl}
+                            onChange={(e) =>
+                              setPromoterFormData({ ...promoterFormData, igUrl: e.target.value })
+                            }
+                            placeholder="https://instagram.com/promoter_handle"
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
+                          />
+                        </div>
+
+                        {/* Verified Checkbox */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <input
+                            type="checkbox"
+                            id="promoter-verified"
+                            checked={promoterFormData.verified}
+                            onChange={(e) =>
+                              setPromoterFormData({
+                                ...promoterFormData,
+                                verified: e.target.checked,
+                              })
+                            }
+                            className="w-4 h-4 accent-lime-400 rounded cursor-pointer"
+                          />
+                          <label
+                            htmlFor="promoter-verified"
+                            className="text-xs text-neutral-200 cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span>Verified Promoter (shows blue/verified checkmark badge)</span>
+                            <BadgeCheck className="w-4 h-4 text-sky-400" />
+                          </label>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsPromoterFormOpen(false)}
+                            className="px-3.5 py-2 rounded-xl text-xs font-medium text-neutral-400 hover:text-white bg-neutral-800 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-black bg-lime-400 hover:bg-lime-300 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{editingPromoterId ? 'Save Promoter' : 'Create Promoter'}</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Promoters List */}
+                  <div className="space-y-2">
+                    {promoters
+                      .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map((promoter) => (
+                        <div
+                          key={promoter.id}
+                          className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-sm font-bold text-white truncate">
+                                {promoter.name}
+                              </h4>
+                              {promoter.verified && (
+                                <span title="Verified Promoter" className="inline-flex items-center">
+                                  <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-neutral-400 font-mono truncate">
+                              {promoter.igUrl || 'No IG linked'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditPromoter(promoter)}
+                              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  type: 'promoter',
+                                  id: promoter.id,
+                                  title: promoter.name,
+                                })
+                              }
+                              className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Delete Confirmation Modal */}
-        {deletingId && (
-          <div className="fixed inset-0 z-1100 bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-neutral-900 border border-red-900/50 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+        {deleteTarget && (
+          <div className="fixed inset-0 z-1200 bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-neutral-900 border border-red-900/60 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
               <h4 className="text-base font-bold text-white mb-2 flex items-center gap-2 text-red-400">
                 <AlertTriangle className="w-5 h-5" />
                 Confirm Deletion
               </h4>
-              <p className="text-neutral-300 text-xs mb-5">
-                Are you sure you want to delete this venue? This action cannot be undone.
+              <p className="text-neutral-300 text-xs mb-1">
+                Are you sure you want to delete this {deleteTarget.type}?
+              </p>
+              <p className="text-white text-xs font-bold font-mono mb-5 truncate">
+                "{deleteTarget.title}"
               </p>
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setDeletingId(null)}
+                  onClick={() => setDeleteTarget(null)}
                   disabled={isDeleting}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium"
+                  className="px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleDeleteConfirm}
+                  onClick={handleConfirmDelete}
                   disabled={isDeleting}
-                  className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5"
+                  className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
                 >
                   {isDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>Delete</span>

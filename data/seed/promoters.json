@@ -1,0 +1,14 @@
+[
+  {
+    "id": "sample-promoter-1",
+    "name": "SAMPLE Loud Wave Collective",
+    "igUrl": "https://instagram.com/sample_loudwave",
+    "verified": true
+  },
+  {
+    "id": "sample-promoter-2",
+    "name": "SAMPLE Rangsit DIY Sounds",
+    "igUrl": "https://instagram.com/sample_rangsit_diy",
+    "verified": false
+  }
+]

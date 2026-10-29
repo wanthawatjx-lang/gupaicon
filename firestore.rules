@@ -14,7 +14,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn()
         && request.auth.token.email_verified == true
-        && (request.auth.token.email == 'wantawachjz@gmail.com' || request.auth.token.email == 'wanthawatjx@gmail.com');
+        && request.auth.token.email == 'wantawachjz@gmail.com';
     }
 
     function isValidId(id) {
@@ -23,6 +23,10 @@ service cloud.firestore {
 
     function incoming() {
       return request.resource.data;
+    }
+
+    function isValidStatus(status) {
+      return status in ['not_open', 'available', 'low', 'sold_out', 'cancelled'];
     }
 
     function isValidVenue(data) {
@@ -38,23 +42,66 @@ service cloud.firestore {
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
+    function isValidPromoter(data) {
+      return data.keys().hasAll(['name', 'igUrl', 'verified'])
+        && data.keys().hasOnly(['name', 'igUrl', 'verified', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.igUrl is string && data.igUrl.size() <= 300
+        && data.verified is bool
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll([
+          'title', 'artists', 'venueId', 'promoterId', 'startAt',
+          'priceText', 'genres', 'ticketUrl', 'igPostUrl', 'status',
+          'statusUpdatedAt', 'statusSource'
+        ])
+        && data.keys().hasOnly([
+          'title', 'artists', 'venueId', 'promoterId', 'startAt',
+          'priceText', 'genres', 'ticketUrl', 'igPostUrl', 'posterUrl',
+          'status', 'statusUpdatedAt', 'statusSource', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 150
+        && data.artists is list && data.artists.size() >= 1 && data.artists.size() <= 30
+        && data.venueId is string && isValidId(data.venueId)
+        && data.promoterId is string && isValidId(data.promoterId)
+        && data.startAt is timestamp
+        && data.priceText is string && data.priceText.size() <= 80
+        && data.genres is list && data.genres.size() <= 15
+        && data.ticketUrl is string && data.ticketUrl.size() <= 500
+        && data.igPostUrl is string && data.igPostUrl.size() <= 500
+        && (!('posterUrl' in data) || (data.posterUrl is string && data.posterUrl.size() <= 1000))
+        && data.status is string && isValidStatus(data.status)
+        && data.statusUpdatedAt is timestamp
+        && data.statusSource == 'admin'
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    // Venues Collection
     match /venues/{venueId} {
-      // Anyone can read venues
       allow read: if true;
+      allow create: if isAdmin() && isValidId(venueId) && isValidVenue(incoming());
+      allow update: if isAdmin() && isValidId(venueId) && isValidVenue(incoming());
+      allow delete: if isAdmin() && isValidId(venueId);
+    }
 
-      // Only verified admin can create venues with valid schema
-      allow create: if isAdmin()
-        && isValidId(venueId)
-        && isValidVenue(incoming());
+    // Promoters Collection
+    match /promoters/{promoterId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(promoterId) && isValidPromoter(incoming());
+      allow update: if isAdmin() && isValidId(promoterId) && isValidPromoter(incoming());
+      allow delete: if isAdmin() && isValidId(promoterId);
+    }
 
-      // Only verified admin can update venues with valid schema
-      allow update: if isAdmin()
-        && isValidId(venueId)
-        && isValidVenue(incoming());
-
-      // Only verified admin can delete venues
-      allow delete: if isAdmin()
-        && isValidId(venueId);
+    // Events Collection
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
+      allow update: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
+      allow delete: if isAdmin() && isValidId(eventId);
     }
   }
 }

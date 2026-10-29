@@ -1,9 +1,9 @@
 /**
- * Seed script for gupaicon venues
+ * Seed script for gupaicon venues, promoters, and events
  * Run with: npx tsx scripts/seed.ts
  */
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -18,11 +18,10 @@ async function runSeed() {
   const app = initializeApp(rawConfig);
   const db = getFirestore(app, rawConfig.firestoreDatabaseId);
 
-  const seedPath = path.resolve(process.cwd(), 'data/seed/venues.json');
-  const venues = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
-
-  console.log(`Seeding ${venues.length} venues to collection 'venues'...`);
-
+  // 1. Seed Venues
+  const venuesPath = path.resolve(process.cwd(), 'data/seed/venues.json');
+  const venues = JSON.parse(fs.readFileSync(venuesPath, 'utf-8'));
+  console.log(`Seeding ${venues.length} venues...`);
   for (const venue of venues) {
     const venueRef = doc(db, 'venues', venue.id);
     await setDoc(venueRef, {
@@ -35,14 +34,62 @@ async function runSeed() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    console.log(`✓ Seeded: ${venue.name} (${venue.lat}, ${venue.lng})`);
+    console.log(`✓ Seeded Venue: ${venue.name}`);
   }
 
-  console.log('Done! Venues seeded successfully.');
+  // 2. Seed Promoters
+  const promotersPath = path.resolve(process.cwd(), 'data/seed/promoters.json');
+  const promoters = JSON.parse(fs.readFileSync(promotersPath, 'utf-8'));
+  console.log(`Seeding ${promoters.length} promoters...`);
+  for (const promoter of promoters) {
+    const promoterRef = doc(db, 'promoters', promoter.id);
+    await setDoc(promoterRef, {
+      name: promoter.name,
+      igUrl: promoter.igUrl,
+      verified: promoter.verified,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    console.log(`✓ Seeded Promoter: ${promoter.name}`);
+  }
+
+  // 3. Seed Events
+  const eventsPath = path.resolve(process.cwd(), 'data/seed/events.json');
+  const events = JSON.parse(fs.readFileSync(eventsPath, 'utf-8'));
+  console.log(`Seeding ${events.length} events...`);
+  for (const event of events) {
+    const eventRef = doc(db, 'events', event.id);
+    const startDate = new Date(event.startAt);
+    const updatedDate = new Date(event.statusUpdatedAt);
+
+    const payload: any = {
+      title: event.title,
+      artists: event.artists,
+      venueId: event.venueId,
+      promoterId: event.promoterId,
+      startAt: Timestamp.fromDate(startDate),
+      priceText: event.priceText,
+      genres: event.genres,
+      ticketUrl: event.ticketUrl,
+      igPostUrl: event.igPostUrl,
+      status: event.status,
+      statusUpdatedAt: Timestamp.fromDate(updatedDate),
+      statusSource: 'admin',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    if (event.posterUrl) {
+      payload.posterUrl = event.posterUrl;
+    }
+    await setDoc(eventRef, payload);
+    console.log(`✓ Seeded Event: ${event.title}`);
+  }
+
+  console.log('Done! All sample venues, promoters, and events seeded successfully.');
   process.exit(0);
 }
 
 runSeed().catch((err) => {
-  console.error('Seed failed:', err);
+  console.error('Seed note:', err);
   process.exit(1);
 });

@@ -1,0 +1,97 @@
+[
+  {
+    "id": "sample-event-1",
+    "title": "SAMPLE Bangkok Math Rock Night",
+    "artists": [
+      "SAMPLE Midnight Circuit",
+      "SAMPLE Polygon Cats",
+      "SAMPLE Neon Overdrive"
+    ],
+    "venueId": "sample-venue-1",
+    "promoterId": "sample-promoter-1",
+    "startAt": "2026-10-30T19:30:00+07:00",
+    "priceText": "450 THB (incl. 1 drink)",
+    "genres": [
+      "Math Rock",
+      "Post-Rock",
+      "Indie"
+    ],
+    "ticketUrl": "https://ticketmelon.com/sample_math_rock",
+    "igPostUrl": "https://instagram.com/p/sample_post_1",
+    "posterUrl": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+    "status": "available",
+    "statusUpdatedAt": "2026-10-29T00:30:00+07:00",
+    "statusSource": "admin"
+  },
+  {
+    "id": "sample-event-2",
+    "title": "SAMPLE Bangkok Shoegaze Showcase Vol. 4",
+    "artists": [
+      "SAMPLE Velvet Echoes",
+      "SAMPLE Static Waves",
+      "SAMPLE Dream Mirage"
+    ],
+    "venueId": "sample-venue-2",
+    "promoterId": "sample-promoter-1",
+    "startAt": "2026-10-31T20:00:00+07:00",
+    "priceText": "350 THB",
+    "genres": [
+      "Shoegaze",
+      "Dream Pop",
+      "Noise Pop"
+    ],
+    "ticketUrl": "https://ticketmelon.com/sample_shoegaze",
+    "igPostUrl": "https://instagram.com/p/sample_post_2",
+    "posterUrl": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80",
+    "status": "low",
+    "statusUpdatedAt": "2026-10-29T00:15:00+07:00",
+    "statusSource": "admin"
+  },
+  {
+    "id": "sample-event-3",
+    "title": "SAMPLE Rangsit Underground Post-Punk Fest",
+    "artists": [
+      "SAMPLE Red Concrete",
+      "SAMPLE The Anarchs",
+      "SAMPLE Dissonance Club"
+    ],
+    "venueId": "sample-venue-3",
+    "promoterId": "sample-promoter-2",
+    "startAt": "2026-11-06T19:00:00+07:00",
+    "priceText": "300 THB at door",
+    "genres": [
+      "Post-Punk",
+      "Darkwave",
+      "Garage Rock"
+    ],
+    "ticketUrl": "https://ticketmelon.com/sample_postpunk",
+    "igPostUrl": "https://instagram.com/p/sample_post_3",
+    "posterUrl": "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=800&q=80",
+    "status": "sold_out",
+    "statusUpdatedAt": "2026-10-28T22:00:00+07:00",
+    "statusSource": "admin"
+  },
+  {
+    "id": "sample-event-4",
+    "title": "SAMPLE Acoustic Sunset Sessions",
+    "artists": [
+      "SAMPLE Tara & The Strings",
+      "SAMPLE Minor Key Duo"
+    ],
+    "venueId": "sample-venue-1",
+    "promoterId": "sample-promoter-2",
+    "startAt": "2026-11-14T18:00:00+07:00",
+    "priceText": "Free Entry",
+    "genres": [
+      "Acoustic",
+      "Folk",
+      "Indie Pop"
+    ],
+    "ticketUrl": "https://ticketmelon.com/sample_acoustic",
+    "igPostUrl": "https://instagram.com/p/sample_post_4",
+    "posterUrl": "",
+    "status": "not_open",
+    "statusUpdatedAt": "2026-10-28T18:00:00+07:00",
+    "statusSource": "admin"
+  }
+]

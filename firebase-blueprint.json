@@ -54,12 +54,164 @@
         "igUrl",
         "mapsUrl"
       ]
+    },
+    "promoter": {
+      "title": "Promoter",
+      "description": "An indie concert promoter or collective organizing live events",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the promoter or collective",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "igUrl": {
+          "type": "string",
+          "description": "Instagram profile link",
+          "maxLength": 300
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Whether the promoter is verified"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": [
+        "name",
+        "igUrl",
+        "verified"
+      ]
+    },
+    "event": {
+      "title": "Event",
+      "description": "A livehouse or indie concert event in Bangkok / Rangsit",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title of the show or concert",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "artists": {
+          "type": "array",
+          "description": "List of performing artists/bands",
+          "items": {
+            "type": "string"
+          }
+        },
+        "venueId": {
+          "type": "string",
+          "description": "ID of the host venue in /venues"
+        },
+        "promoterId": {
+          "type": "string",
+          "description": "ID of the organizing promoter in /promoters"
+        },
+        "startAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Event start date and time timestamp"
+        },
+        "priceText": {
+          "type": "string",
+          "description": "Ticket price description",
+          "maxLength": 80
+        },
+        "genres": {
+          "type": "array",
+          "description": "Music genres/tags",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ticketUrl": {
+          "type": "string",
+          "description": "Ticket buying link",
+          "maxLength": 500
+        },
+        "igPostUrl": {
+          "type": "string",
+          "description": "Instagram announcement post link",
+          "maxLength": 500
+        },
+        "posterUrl": {
+          "type": "string",
+          "description": "Optional concert poster image URL",
+          "maxLength": 1000
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_open",
+            "available",
+            "low",
+            "sold_out",
+            "cancelled"
+          ],
+          "description": "Ticket availability or show status"
+        },
+        "statusUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the last status update"
+        },
+        "statusSource": {
+          "type": "string",
+          "enum": [
+            "admin"
+          ],
+          "description": "Source of status verification"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": [
+        "title",
+        "artists",
+        "venueId",
+        "promoterId",
+        "startAt",
+        "priceText",
+        "genres",
+        "ticketUrl",
+        "igPostUrl",
+        "status",
+        "statusUpdatedAt",
+        "statusSource"
+      ]
     }
   },
   "firestore": {
     "/venues/{venueId}": {
       "schema": "venue",
       "description": "Collection of indie / livehouse concert venues in Bangkok and Pathum Thani"
+    },
+    "/promoters/{promoterId}": {
+      "schema": "promoter",
+      "description": "Collection of indie concert promoters and collectives"
+    },
+    "/events/{eventId}": {
+      "schema": "event",
+      "description": "Collection of upcoming livehouse shows and concerts"
     }
   }
 }

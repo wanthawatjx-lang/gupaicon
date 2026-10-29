@@ -1,131 +1,136 @@
 # gupaicon (กู้ภัยคอน)
 
-A mobile-first web app map of indie / livehouse concert venues in Bangkok and Rangsit/Pathum Thani, Thailand.
+A mobile-first web app map of indie / livehouse concerts and venues in Bangkok and Rangsit/Pathum Thani, Thailand.
 
-Built with **React**, **TypeScript**, **Vite**, **Leaflet** with OpenStreetMap tiles, and **Firebase** (Firestore + Google Authentication).
-
----
-
-## Features (Prompt 1)
-
-1. **Full-Screen Interactive Map**:
-   - Centered on Bangkok (`13.80, 100.55`), zoom `11`.
-   - Restricted boundaries to Bangkok and Rangsit / Pathum Thani (`13.40, 100.20` to `14.30, 100.95`).
-   - Dark, minimal music-poster theme with CartoDB Dark Matter tiles powered by OpenStreetMap.
-   - Visible attribution: `"© OpenStreetMap contributors © CARTO"`.
-   - Custom vinyl/soundwave neon pins optimized for 390px mobile screens with 44px+ touch targets.
-
-2. **Venue Details & Bottom Sheet**:
-   - Real-time synchronization from Firestore collection `venues`.
-   - Tapping any pin highlights the venue and opens a bottom sheet displaying:
-     - Venue Name
-     - Address / District
-     - Lat/Lng coordinates
-     - **"Open in Maps"** button (`mapsUrl`)
-     - **"Instagram"** button (`igUrl`)
-
-3. **Sample Venues & Seed Script**:
-   - `data/seed/venues.json` contains 3 clearly labeled sample venues starting with `"SAMPLE"`:
-     1. `SAMPLE Venue Alpha - Bangkok Central` (13.7563, 100.5018)
-     2. `SAMPLE Livehouse Beta - Chatuchak / Bang Sue` (13.8050, 100.5500)
-     3. `SAMPLE Underground Space Gamma - Rangsit` (13.9890, 100.6170)
-   - Seedable with 1-click in the Admin Console or via CLI: `npx tsx scripts/seed.ts`.
-
-4. **Admin Console (`/admin`)**:
-   - Dedicated admin route accessed via `#/admin` or the top bar shield button.
-   - "Sign in with Google" via Firebase Auth.
-   - Authorization check: only `wantawachjz@gmail.com` (and development developer email) can add, edit, or delete venues.
-   - Form with coordinate presets (Bangkok Center, Bang Sue, Rangsit) and validation.
-
-5. **Hardened Firestore Security Rules**:
-   - Anyone can read (`allow read: if true;`) from `/venues/{venueId}`.
-   - Only verified admin email (`wantawachjz@gmail.com`) can write, update, or delete venues.
-   - Validates required fields (`name`, `lat`, `lng`, `address`, `igUrl`, `mapsUrl`), string lengths, and numeric coordinate types.
+Built with **React**, **TypeScript**, **Vite**, **Leaflet** with OpenStreetMap tiles, and **Firebase** (Firestore + Google Authentication). UI Language: English.
 
 ---
 
-## Project Structure
+## Features
 
-```
-├── data/
-│   └── seed/
-│       └── venues.json         # 3 sample venues with Bangkok & Rangsit coordinates
-├── scripts/
-│   └── seed.ts                 # CLI seed script for populating Firestore venues
-├── src/
-│   ├── components/
-│   │   ├── AdminPanel.tsx      # Google Sign-in and Venue Add/Edit/Delete form
-│   │   ├── Header.tsx          # Branding and quick toggles
-│   │   ├── Map.tsx             # Leaflet fullscreen map with custom pins & bounds
-│   │   ├── VenueBottomSheet.tsx# Bottom sheet modal with Maps & Instagram buttons
-│   │   └── VenueListDrawer.tsx # Mobile drawer to browse all venues by name
-│   ├── services/
-│   │   └── venueService.ts     # Firestore CRUD and real-time subscription
-│   ├── types/
-│   │   └── venue.ts            # TypeScript interfaces for Venue
-│   ├── App.tsx                 # Root application component
-│   ├── firebase.ts             # Firebase SDK initialization and error handler
-│   ├── index.css               # Dark music-poster theme & Leaflet overrides
-│   └── main.tsx                # App entry point
-├── firebase-applet-config.json # Generated Firebase connection settings
-├── firebase-blueprint.json     # Schema blueprint for Firestore
-├── firestore.rules             # Deployed Firestore security rules
-├── .env.example                # Example environment variables
-└── README.md
-```
+### 1. Full-Screen Interactive Map
+- Centered on Bangkok (`13.80, 100.55`), zoom `11`.
+- Restricted boundaries strictly enclosing Bangkok and Rangsit / Pathum Thani (`13.40, 100.20` to `14.30, 100.95`).
+- Dark, minimal music-poster theme with CartoDB Dark Matter tiles powered by OpenStreetMap data.
+- Visible attribution: `"© OpenStreetMap contributors © CARTO"`.
+- Custom neon vinyl pins optimized for 390px mobile screens with 44px+ touch targets.
+- **Dynamic Urgency Pin Coloring**:
+  - 🟢 **Green** (`#22c55e`): Tickets available for upcoming show(s).
+  - 🟡 **Yellow** (`#eab308`): Tickets running low (`low`).
+  - 🔴 **Red** (`#ef4444`): Sold out shows.
+  - ⚫ **Grey** (`#52525b`): Venue has no upcoming shows or not open.
+
+### 2. Date & Ticket Availability Filter Bar
+- Quick segmented filter buttons: **All**, **Today**, **This week**, **This month**.
+- Toggle switch: **Tickets only** (filters to shows with `available` or `low` ticket status).
+- Map pin colors and counts react in real-time to active filters.
+
+### 3. Venue Bottom Sheet
+- Tapping any venue pin slides up a tactile music-poster bottom sheet.
+- Direct links: **"Open in Maps"** (`mapsUrl`) and **"Instagram"** (`igUrl`).
+- **Upcoming Concerts List**: Shows upcoming events hosted at the venue, sorted by date with past events hidden.
+  - Formatted in `Asia/Bangkok` timezone.
+  - Status badges: Green (Available), Yellow (Low), Red (Sold out), Grey (Not open / Cancelled).
+  - Relative update label: `"updated X min ago"`.
+
+### 4. Event Detail Sheet
+- Tapping any concert event row opens full event details:
+  - Event title, lineup / artists pills, and genres.
+  - **Promoter / Collective**: with verified checkmark (`✓`) if verified, linking directly to promoter Instagram.
+  - Date & Time in `Asia/Bangkok` timezone.
+  - Ticket price description (`priceText`).
+  - Status badge and last verified time.
+  - **"Buy tickets"** button (`ticketUrl`, opens in new tab).
+  - **"View IG post"** button (`igPostUrl`, opens in new tab as standard link, no embeds).
+
+### 5. Extended Admin Console (`/admin` and `#/admin`)
+- Accessible via the top bar shield button or direct `/admin` URL.
+- **Google Sign-In**: Strictly restricted to `wantawachjz@gmail.com` with `email_verified == true`.
+- **Events Management**:
+  - Create, edit, and delete events.
+  - Venue and Promoter dropdown selectors.
+  - **One-Tap Status Switcher**: Instantly update ticket status (`available`, `low`, `sold_out`, `not_open`, `cancelled`) directly on the event row with instant timestamp updates.
+- **Promoters Management**: Add, edit, and delete promoters (name, Instagram URL, verified toggle).
+- **Venues Management**: Add, edit, and delete venues with coordinates presets.
+- **1-Click Seed Button**: Seeds sample venues, promoters, and events.
+
+### 6. Free-Tier Quota Optimization
+- Real-time event queries are constrained with `orderBy('startAt', 'asc')` and `limit(80)` to prevent unbounded document reads.
+- Venues and promoters are indexed relationally in client memory, avoiding repetitive roundtrips.
+- Past events are filtered out efficiently without exceeding Firestore daily read limits.
+
+---
+
+## Firestore Schema & Collections
+
+### 1. `/venues/{venueId}`
+- `name`: string (2..100)
+- `lat`: number
+- `lng`: number
+- `address`: string (2..250)
+- `igUrl`: string (0..300)
+- `mapsUrl`: string (0..500)
+- `createdAt`, `updatedAt`: timestamp
+
+### 2. `/promoters/{promoterId}`
+- `name`: string (2..100)
+- `igUrl`: string (0..300)
+- `verified`: boolean
+- `createdAt`, `updatedAt`: timestamp
+
+### 3. `/events/{eventId}`
+- `title`: string (2..150)
+- `artists`: array of strings
+- `venueId`: string (references `/venues/{venueId}`)
+- `promoterId`: string (references `/promoters/{promoterId}`)
+- `startAt`: timestamp
+- `priceText`: string (0..80)
+- `genres`: array of strings
+- `ticketUrl`: string (0..500)
+- `igPostUrl`: string (0..500)
+- `posterUrl`: string (optional, 0..1000)
+- `status`: `"not_open"` | `"available"` | `"low"` | `"sold_out"` | `"cancelled"`
+- `statusUpdatedAt`: timestamp
+- `statusSource`: `"admin"`
+- `createdAt`, `updatedAt`: timestamp
+
+---
+
+## Firestore Security Rules
+
+Deployed in `firestore.rules`:
+- **Read**: Public read access for `venues`, `promoters`, and `events`.
+- **Write**: Only verified email `wantawachjz@gmail.com` can create, update, or delete records.
+- **Validation**: Strict schema checks, string length bounds, allowed fields, and valid status values.
+
+---
+
+## Sample Data & Seeding
+
+Sample data files:
+- `data/seed/venues.json`: 3 sample venues (Bangkok Central, Bang Sue, Rangsit).
+- `data/seed/promoters.json`: 2 sample promoters (`SAMPLE Loud Wave Collective` [verified], `SAMPLE Rangsit DIY Sounds`).
+- `data/seed/events.json`: 4 sample events across sample venues with various statuses (`available`, `low`, `sold_out`, `not_open`).
+
+### How to Seed:
+1. **Via Admin UI**: Navigate to `#/admin`, sign in with Google using `wantawachjz@gmail.com`, and click **"Seed All Samples"**.
+2. **Via CLI**:
+   ```bash
+   npx tsx scripts/seed.ts
+   ```
 
 ---
 
 ## How to Run Locally
 
-### 1. Install Dependencies
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-### 2. Configure Firebase
-
-In AI Studio, Firebase is automatically provisioned and configured in `firebase-applet-config.json`.
-
-If running locally outside AI Studio:
-1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com/).
-2. Enable **Firestore Database** in test or production mode.
-3. Enable **Authentication** and add **Google** as a Sign-in Provider.
-4. Copy your web app configuration into `firebase-applet-config.json` in the root directory:
-   ```json
-   {
-     "projectId": "your-project-id",
-     "appId": "1:123456789:web:abcdef",
-     "apiKey": "AIzaSy...",
-     "authDomain": "your-project-id.firebaseapp.com",
-     "firestoreDatabaseId": "(default)",
-     "storageBucket": "your-project-id.firebasestorage.app",
-     "messagingSenderId": "123456789"
-   }
-   ```
-
-### 3. Start Development Server
-```bash
+# 2. Start dev server
 npm run dev
+
+# 3. Build for production
+npm run build
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### 4. Seed Sample Venues
-
-You can seed the sample venues in two ways:
-- **Option A (Admin UI)**: Navigate to `#/admin`, sign in with Google using `wantawachjz@gmail.com`, and click **"Seed Sample Venues"**.
-- **Option B (Terminal)**:
-  ```bash
-  npx tsx scripts/seed.ts
-  ```
-
----
-
-## Firebase Console Configuration Checklist
-
-1. **Authentication -> Sign-in method**:
-   - Ensure **Google** is enabled under Sign-in providers.
-2. **Authentication -> Settings -> Authorized domains**:
-   - Verify `localhost` and your deployment domain (e.g., `*.run.app`) are listed in Authorized Domains.
-3. **Firestore Database -> Rules**:
-   - Confirm rules are deployed from `firestore.rules`.

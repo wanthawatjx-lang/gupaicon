@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { Venue } from '../types/venue';
-import { MapPin, X, Search, ChevronRight } from 'lucide-react';
+import { ConcertEvent } from '../types/event';
+import { getVenueUrgentStatus, STATUS_MAP } from '../utils/statusUtils';
+import { MapPin, X, Search, ChevronRight, Music2 } from 'lucide-react';
 
 interface VenueListDrawerProps {
   venues: Venue[];
+  events?: ConcertEvent[];
   onSelectVenue: (venue: Venue) => void;
   onClose: () => void;
 }
 
 export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
   venues,
+  events = [],
   onSelectVenue,
   onClose,
 }) => {
@@ -43,7 +47,7 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
+            className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -71,7 +75,10 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
             </div>
           ) : (
             filtered.map((venue) => {
+              const venueEvents = events.filter((e) => e.venueId === venue.id);
+              const { status, color, upcomingCount } = getVenueUrgentStatus(venueEvents);
               const isSample = venue.name.toUpperCase().startsWith('SAMPLE');
+
               return (
                 <button
                   key={venue.id}
@@ -83,17 +90,35 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
                   className="w-full text-left p-3 rounded-xl bg-neutral-900/50 hover:bg-neutral-900 border border-neutral-800/60 hover:border-lime-400/50 transition-all flex items-center justify-between gap-3 group cursor-pointer"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: color }}
+                      />
                       <span className="text-sm font-bold text-white group-hover:text-lime-300 transition-colors truncate">
                         {venue.name}
                       </span>
+                      {isSample && (
+                        <span className="shrink-0 px-1 py-0.2 rounded bg-neutral-800 text-[9px] font-mono text-amber-300">
+                          SAMPLE
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-neutral-400 truncate">
+                    <div className="flex items-center gap-1 text-xs text-neutral-400 truncate pl-4.5">
                       <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
                       <span className="truncate">{venue.address}</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-neutral-600 group-hover:text-lime-400 shrink-0 transition-colors" />
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {upcomingCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-[10px] font-mono text-neutral-300 flex items-center gap-1">
+                        <Music2 className="w-2.5 h-2.5 text-lime-400" />
+                        {upcomingCount}
+                      </span>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-neutral-600 group-hover:text-lime-400 shrink-0 transition-colors" />
+                  </div>
                 </button>
               );
             })

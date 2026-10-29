@@ -14,15 +14,13 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Admin email list: specified admin from prompt + current developer account
-export const ADMIN_EMAILS = [
-  'wantawachjz@gmail.com',
-  'wanthawatjx@gmail.com'
-];
+// Admin email: strictly wantawachjz@gmail.com
+export const ADMIN_EMAIL = 'wantawachjz@gmail.com';
+export const ADMIN_EMAILS = [ADMIN_EMAIL];
 
 export function isUserAdmin(email: string | null | undefined): boolean {
   if (!email) return false;
-  return ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email.toLowerCase());
+  return email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 }
 
 // Error handling as required by Firebase specification

@@ -2,10 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { RotateCcw } from 'lucide-react';
 import { Venue } from '../types/venue';
+import { ConcertEvent } from '../types/event';
+import { getVenueUrgentStatus } from '../utils/statusUtils';
 
 // Bangkok & Pathum Thani boundary coordinates
-// Southwest: [13.40, 100.20] (South Bangkok / Gulf boundary)
-// Northeast: [14.30, 100.95] (North Pathum Thani / Ayutthaya boundary)
 const BANGKOK_PATHUM_BOUNDS = L.latLngBounds(
   L.latLng(13.40, 100.20),
   L.latLng(14.30, 100.95)
@@ -16,11 +16,17 @@ const DEFAULT_ZOOM = 11;
 
 interface MapProps {
   venues: Venue[];
+  events?: ConcertEvent[];
   selectedVenue: Venue | null;
   onSelectVenue: (venue: Venue | null) => void;
 }
 
-export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }) => {
+export const Map: React.FC<MapProps> = ({
+  venues,
+  events = [],
+  selectedVenue,
+  onSelectVenue,
+}) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
@@ -37,7 +43,7 @@ export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }
       maxZoom: 18,
       maxBounds: BANGKOK_PATHUM_BOUNDS,
       maxBoundsViscosity: 0.9,
-      zoomControl: false, // Custom position for mobile friendliness
+      zoomControl: false,
     });
 
     // Add Zoom Control to top-right
@@ -64,7 +70,7 @@ export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }
     };
   }, []);
 
-  // Update Markers when venues list or selected venue changes
+  // Update Markers when venues list, events, or selected venue changes (Requirement 4)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -79,32 +85,41 @@ export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }
 
       const isSelected = selectedVenue?.id === venue.id;
 
-      // Custom Music-Poster Style HTML Pin Icon
+      // Calculate urgent status based on upcoming events for this venue (Requirement 4)
+      const venueEvents = events.filter((e) => e.venueId === venue.id);
+      const { status, color, upcomingCount } = getVenueUrgentStatus(venueEvents);
+
+      // Custom Music-Poster Style HTML Pin Icon colored by urgent status
       const iconHtml = `
         <div class="relative group cursor-pointer flex items-center justify-center -translate-x-1/2 -translate-y-1/2" style="width: 48px; height: 48px;">
           <!-- Pulse ring when selected -->
           ${
             isSelected
-              ? '<span class="absolute inline-flex h-11 w-11 rounded-full bg-lime-400/40 animate-ping"></span>'
+              ? `<span class="absolute inline-flex h-12 w-12 rounded-full opacity-60 animate-ping" style="background-color: ${color}"></span>`
               : ''
           }
           <!-- Outer Badge -->
           <div class="relative flex items-center justify-center w-10 h-10 rounded-full transition-transform duration-150 ${
             isSelected
-              ? 'bg-lime-400 text-black scale-110 shadow-[0_0_20px_rgba(163,230,53,0.8)] ring-2 ring-white'
-              : 'bg-neutral-900 text-lime-400 hover:scale-105 border-2 border-lime-400/80 shadow-[0_4px_12px_rgba(0,0,0,0.8)]'
-          }">
+              ? 'scale-115 shadow-2xl ring-2 ring-white'
+              : 'hover:scale-105 shadow-lg'
+          }" style="background-color: #0d0d0f; border: 2.5px solid ${color}; box-shadow: 0 0 14px ${color}66;">
             <!-- Music Vinyl / Livehouse icon -->
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 18V5l12-2v13" />
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
             </svg>
+
+            <!-- Show count pill if there are upcoming events -->
+            ${
+              upcomingCount > 0
+                ? `<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-mono font-bold text-black border border-black" style="background-color: ${color};">${upcomingCount}</span>`
+                : ''
+            }
           </div>
           <!-- Little arrow pointer under circle -->
-          <div class="absolute -bottom-1 w-2 h-2 rotate-45 ${
-            isSelected ? 'bg-lime-400' : 'bg-neutral-900 border-r border-b border-lime-400/80'
-          }"></div>
+          <div class="absolute -bottom-1 w-2.5 h-2.5 rotate-45" style="background-color: #0d0d0f; border-right: 2px solid ${color}; border-bottom: 2px solid ${color};"></div>
         </div>
       `;
 
@@ -117,7 +132,7 @@ export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }
 
       const marker = L.marker([venue.lat, venue.lng], {
         icon: customIcon,
-        title: venue.name,
+        title: `${venue.name} (${upcomingCount} shows, status: ${status})`,
       });
 
       marker.on('click', (e) => {
@@ -129,7 +144,7 @@ export const Map: React.FC<MapProps> = ({ venues, selectedVenue, onSelectVenue }
       marker.addTo(map);
       markersRef.current[venue.id] = marker;
     });
-  }, [venues, selectedVenue, onSelectVenue]);
+  }, [venues, events, selectedVenue, onSelectVenue]);
 
   // Center on selected venue if it changes externally
   useEffect(() => {
