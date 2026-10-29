@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
-import { getVenueUrgentStatus, STATUS_MAP } from '../utils/statusUtils';
+import { getVenueUrgentStatus } from '../utils/statusUtils';
+import { Language, translations } from '../i18n/translations';
 import { MapPin, X, Search, ChevronRight, Music2 } from 'lucide-react';
 
 interface VenueListDrawerProps {
@@ -9,6 +10,7 @@ interface VenueListDrawerProps {
   events?: ConcertEvent[];
   onSelectVenue: (venue: Venue) => void;
   onClose: () => void;
+  lang: Language;
 }
 
 export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
@@ -16,8 +18,10 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
   events = [],
   onSelectVenue,
   onClose,
+  lang,
 }) => {
   const [query, setQuery] = useState('');
+  const t = translations[lang];
 
   const filtered = venues.filter(
     (v) =>
@@ -40,14 +44,17 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
         <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white font-mono uppercase tracking-wide">
-              Venues ({venues.length})
+              {t.app.venuesCount(venues.length)}
             </h3>
-            <p className="text-xs text-neutral-400">Bangkok & Pathum Thani livehouses</p>
+            <p className="text-xs text-neutral-400">
+              {lang === 'th' ? 'ร้านและไลฟ์เฮาส์ในกรุงเทพฯ & ปทุมธานี' : 'Bangkok & Pathum Thani livehouses'}
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label="Close drawer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,7 +68,7 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by name or district..."
+              placeholder={t.app.searchPlaceholder}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
             />
           </div>
@@ -71,12 +78,12 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
           {filtered.length === 0 ? (
             <div className="py-12 text-center text-xs text-neutral-500">
-              No matching venues found.
+              {lang === 'th' ? 'ไม่พบข้อมูลร้านที่ค้นหา' : 'No matching venues found.'}
             </div>
           ) : (
             filtered.map((venue) => {
               const venueEvents = events.filter((e) => e.venueId === venue.id);
-              const { status, color, upcomingCount } = getVenueUrgentStatus(venueEvents);
+              const { color, upcomingCount } = getVenueUrgentStatus(venueEvents);
               const isSample = venue.name.toUpperCase().startsWith('SAMPLE');
 
               return (

@@ -9,14 +9,9 @@ import { auth, isUserAdmin } from './firebase';
 import { Venue } from './types/venue';
 import { Promoter } from './types/promoter';
 import { ConcertEvent, DateFilter } from './types/event';
-import { OrganizerRecord, OrganizerRequest } from './types/organizer';
 import { subscribeToVenues } from './services/venueService';
 import { subscribeToPromoters } from './services/promoterService';
 import { subscribeToEvents } from './services/eventService';
-import {
-  subscribeUserOrganizerRecord,
-  subscribeUserOrganizerRequest,
-} from './services/organizerService';
 import { Map } from './components/Map';
 import { Header } from './components/Header';
 import { FilterBar } from './components/FilterBar';
@@ -24,9 +19,7 @@ import { VenueBottomSheet } from './components/VenueBottomSheet';
 import { EventDetailSheet } from './components/EventDetailSheet';
 import { AdminPanel } from './components/AdminPanel';
 import { VenueListDrawer } from './components/VenueListDrawer';
-import { OrganizerRequestModal } from './components/OrganizerRequestModal';
-import { OrganizerDashboard } from './components/OrganizerDashboard';
-import { PromoterPage } from './components/PromoterPage';
+import { Language, getInitialLanguage, saveLanguagePreference, translations } from './i18n/translations';
 import {
   isDateToday,
   isDateThisWeek,
@@ -40,6 +33,15 @@ import sampleEvents from '../data/seed/events.json';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+
+  // Language state (TH / EN) - Requirement 10
+  const [lang, setLang] = useState<Language>(getInitialLanguage());
+
+  const handleToggleLang = () => {
+    const nextLang: Language = lang === 'th' ? 'en' : 'th';
+    setLang(nextLang);
+    saveLanguagePreference(nextLang);
+  };
 
   // Collections state
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -57,16 +59,7 @@ export default function App() {
   // Modal & Drawer navigation
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isListDrawerOpen, setIsListDrawerOpen] = useState(false);
-  const [isOrganizerRequestOpen, setIsOrganizerRequestOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
-
-  // Hash route state
-  const [currentRoute, setCurrentRoute] = useState<'map' | 'admin' | 'organizer' | 'promoter'>('map');
-  const [routePromoterId, setRoutePromoterId] = useState<string | null>(null);
-
-  // Organizer state for signed-in user
-  const [userOrganizerRecord, setUserOrganizerRecord] = useState<OrganizerRecord | null>(null);
-  const [userOrganizerRequest, setUserOrganizerRequest] = useState<OrganizerRequest | null>(null);
 
   // Loading state
   const [loadingVenues, setLoadingVenues] = useState(true);
@@ -81,55 +74,16 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Subscribe to user organizer records & requests
-  useEffect(() => {
-    if (!user) {
-      setUserOrganizerRecord(null);
-      setUserOrganizerRequest(null);
-      return;
-    }
-
-    const unsubRec = subscribeUserOrganizerRecord(
-      user.uid,
-      (rec) => setUserOrganizerRecord(rec),
-      (err) => console.warn('User organizer record check:', err)
-    );
-
-    const unsubReq = subscribeUserOrganizerRequest(
-      user.uid,
-      (req) => setUserOrganizerRequest(req),
-      (err) => console.warn('User organizer request check:', err)
-    );
-
-    return () => {
-      unsubRec();
-      unsubReq();
-    };
-  }, [user]);
-
-  // Listen to hash routes (#/admin, #/organizer, #/promoter/:id)
+  // Listen to hash routes (#/admin)
   useEffect(() => {
     const checkHashRoute = () => {
       const hash = window.location.hash;
       const path = window.location.pathname;
 
-      if (hash.startsWith('#/promoter/')) {
-        const id = hash.replace('#/promoter/', '').split('?')[0].trim();
-        setRoutePromoterId(id);
-        setCurrentRoute('promoter');
-        setIsAdminOpen(false);
-      } else if (hash === '#/organizer' || hash === '#organizer') {
-        setCurrentRoute('organizer');
-        setIsAdminOpen(false);
-        setRoutePromoterId(null);
-      } else if (hash === '#/admin' || hash === '#admin' || path === '/admin') {
-        setCurrentRoute('admin');
+      if (hash === '#/admin' || hash === '#admin' || path === '/admin') {
         setIsAdminOpen(true);
-        setRoutePromoterId(null);
       } else {
-        setCurrentRoute('map');
         setIsAdminOpen(false);
-        setRoutePromoterId(null);
       }
     };
 
@@ -154,10 +108,6 @@ export default function App() {
     if (window.location.hash === '#/admin' || window.location.hash === '#admin') {
       window.location.hash = '';
     }
-  };
-
-  const handleNavigateHome = () => {
-    window.location.hash = '';
   };
 
   // 1. Subscribe to Venues Collection
@@ -186,7 +136,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 3. Subscribe to Events Collection (Quota-protected query)
+  // 3. Subscribe to Events Collection (Quota-protected query with limit 80)
   useEffect(() => {
     setLoadingEvents(true);
     const unsubscribe = subscribeToEvents(
@@ -235,8 +185,7 @@ export default function App() {
     window.location.hash = '/admin';
   };
 
-  const isAdmin = user ? isUserAdmin(user.email) : false;
-  const isApprovedOrganizer = Boolean(userOrganizerRecord);
+  const isAdmin = user ? isUserAdmin(user.email, user.emailVerified) : false;
 
   // Find host promoter and host venue for selectedEvent
   const selectedEventPromoter = useMemo(() => {
@@ -249,49 +198,20 @@ export default function App() {
     return activeVenues.find((v) => v.id === selectedEvent.venueId)?.name;
   }, [selectedEvent, activeVenues]);
 
-  // Route: Promoter Profile Page (#/promoter/:id)
-  if (currentRoute === 'promoter' && routePromoterId) {
-    return (
-      <PromoterPage
-        promoterId={routePromoterId}
-        promoters={activePromoters}
-        events={activeEvents}
-        venues={activeVenues}
-        onSelectEvent={(event) => setSelectedEvent(event)}
-        onBack={handleNavigateHome}
-      />
-    );
-  }
-
-  // Route: Organizer Dashboard (#/organizer)
-  if (currentRoute === 'organizer') {
-    return (
-      <OrganizerDashboard
-        user={user}
-        organizerRecord={userOrganizerRecord}
-        promoters={activePromoters}
-        venues={activeVenues}
-        events={activeEvents}
-        onBack={handleNavigateHome}
-        onOpenOrganizerRequest={() => setIsOrganizerRequestOpen(true)}
-      />
-    );
-  }
+  const t = translations[lang];
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black text-white select-none">
-      {/* Top Header */}
+      {/* Top Header with TH/EN Toggle and Admin Button */}
       <Header
         venuesCount={activeVenues.length}
-        user={user}
-        isApprovedOrganizer={isApprovedOrganizer}
+        eventsCount={filteredEvents.length}
+        lang={lang}
+        onToggleLang={handleToggleLang}
         onOpenAdmin={handleOpenAdmin}
-        onOpenOrganizerDashboard={() => {
-          window.location.hash = '/organizer';
-        }}
-        onOpenOrganizerRequest={() => setIsOrganizerRequestOpen(true)}
         onToggleList={() => setIsListDrawerOpen(!isListDrawerOpen)}
         isListOpen={isListDrawerOpen}
+        isAdminSignedIn={isAdmin}
       />
 
       {/* Filter Bar (Today / This week / This month / All + Tickets available only) */}
@@ -300,9 +220,10 @@ export default function App() {
         onDateFilterChange={setDateFilter}
         availableOnly={availableOnly}
         onAvailableOnlyToggle={() => setAvailableOnly(!availableOnly)}
+        lang={lang}
       />
 
-      {/* Full-screen Leaflet Map with Urgent Event Status Pins */}
+      {/* Full-screen Leaflet Map with Urgent Event Status Pins (Bangkok & Pathum Thani) */}
       <Map
         venues={activeVenues}
         events={filteredEvents}
@@ -318,7 +239,7 @@ export default function App() {
         <div className="absolute top-28 left-3 z-400 pointer-events-auto">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-amber-500/40 text-amber-300 text-[11px] font-mono shadow-lg backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span>Sample Livehouse Preview</span>
+            <span>{lang === 'th' ? 'ตัวอย่างข้อมูลไลฟ์เฮาส์' : 'Sample Livehouse Preview'}</span>
             <button
               type="button"
               onClick={handleOpenAdmin}
@@ -338,14 +259,14 @@ export default function App() {
         onClose={() => setSelectedVenue(null)}
         isAdmin={isAdmin}
         onEdit={handleEditFromSheet}
+        lang={lang}
       />
 
-      {/* Event Detail Sheet (Artists, Promoter link, Bangkok time, Buy tickets, View IG post, Crowd Report) */}
+      {/* Event Detail Sheet (Artists, Promoter link, Bangkok time, Buy tickets, View IG post) */}
       <EventDetailSheet
         event={selectedEvent}
         promoter={selectedEventPromoter}
         venueName={selectedEventVenueName}
-        user={user}
         onClose={() => setSelectedEvent(null)}
         onOpenVenue={() => {
           if (selectedEvent) {
@@ -353,6 +274,7 @@ export default function App() {
             if (v) setSelectedVenue(v);
           }
         }}
+        lang={lang}
       />
 
       {/* Venues Quick List Drawer with Urgent Status Indicators */}
@@ -366,19 +288,11 @@ export default function App() {
             setIsListDrawerOpen(false);
           }}
           onClose={() => setIsListDrawerOpen(false)}
+          lang={lang}
         />
       )}
 
-      {/* Organizer Application & Status Modal */}
-      <OrganizerRequestModal
-        isOpen={isOrganizerRequestOpen}
-        onClose={() => setIsOrganizerRequestOpen(false)}
-        user={user}
-        currentRequest={userOrganizerRequest}
-        isApprovedOrganizer={isApprovedOrganizer}
-      />
-
-      {/* Extended Admin Panel */}
+      {/* Admin Panel (English only, strictly for wantawachjz@gmail.com) */}
       {isAdminOpen && (
         <AdminPanel
           user={user}

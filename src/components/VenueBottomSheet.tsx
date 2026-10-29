@@ -2,7 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
 import { STATUS_MAP } from '../utils/statusUtils';
-import { formatBangkokDateTime, formatRelativeTime, isEventUpcoming, parseTimestampToDate } from '../utils/dateUtils';
+import {
+  formatBangkokDateTime,
+  formatRelativeTime,
+  isEventUpcoming,
+  parseTimestampToDate,
+} from '../utils/dateUtils';
+import { Language, translations } from '../i18n/translations';
 import {
   MapPin,
   Instagram,
@@ -13,7 +19,6 @@ import {
   Calendar,
   ChevronRight,
   Music2,
-  Ticket,
 } from 'lucide-react';
 
 interface VenueBottomSheetProps {
@@ -23,6 +28,7 @@ interface VenueBottomSheetProps {
   onClose: () => void;
   isAdmin?: boolean;
   onEdit?: (venue: Venue) => void;
+  lang: Language;
 }
 
 export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
@@ -32,8 +38,10 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
   onClose,
   isAdmin = false,
   onEdit,
+  lang,
 }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
+  const t = translations[lang];
 
   // Close on Escape key
   useEffect(() => {
@@ -51,7 +59,11 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
   // Filter upcoming events for this venue, sorted by date (Requirement 2)
   const venueEvents = events
     .filter((e) => e.venueId === venue.id && isEventUpcoming(e.startAt))
-    .sort((a, b) => parseTimestampToDate(a.startAt).getTime() - parseTimestampToDate(b.startAt).getTime());
+    .sort(
+      (a, b) =>
+        parseTimestampToDate(a.startAt).getTime() -
+        parseTimestampToDate(b.startAt).getTime()
+    );
 
   return (
     <>
@@ -85,7 +97,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
               </span>
               {isSample && (
                 <span className="px-2 py-0.5 rounded-sm bg-neutral-800 text-amber-300 border border-amber-400/30 font-mono text-[10px] uppercase font-medium">
-                  Sample Data
+                  SAMPLE
                 </span>
               )}
             </div>
@@ -113,7 +125,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
             </div>
           </div>
 
-          {/* Venue Title */}
+          {/* Venue Title & Address (Firestore names left untranslated as requested) */}
           <div>
             <h2
               id="sheet-venue-title"
@@ -145,7 +157,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
               className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-white text-black font-semibold text-sm hover:bg-neutral-200 active:scale-[0.98] transition-all cursor-pointer shadow-md"
             >
               <ExternalLink className="w-4 h-4" />
-              <span>Open in Maps</span>
+              <span>{t.venueSheet.openInMaps}</span>
             </a>
 
             {/* Instagram Link */}
@@ -156,7 +168,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
               className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-600 text-white font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer shadow-md"
             >
               <Instagram className="w-4 h-4" />
-              <span>Instagram</span>
+              <span>{t.venueSheet.instagram}</span>
             </a>
           </div>
 
@@ -166,22 +178,23 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
               <div className="flex items-center gap-2">
                 <Music2 className="w-4 h-4 text-lime-400" />
                 <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-neutral-200">
-                  Upcoming Concerts
+                  {t.venueSheet.upcomingEvents}
                 </h3>
               </div>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-400">
-                {venueEvents.length} {venueEvents.length === 1 ? 'show' : 'shows'}
+                {t.venueSheet.eventsAtVenue(venueEvents.length)}
               </span>
             </div>
 
             {venueEvents.length === 0 ? (
               <div className="p-5 text-center rounded-xl bg-neutral-900/40 border border-dashed border-neutral-800 text-neutral-500 text-xs">
-                No upcoming concerts scheduled at this venue.
+                {t.venueSheet.noUpcomingEvents}
               </div>
             ) : (
               <div className="space-y-2.5">
                 {venueEvents.map((event) => {
                   const statusInfo = STATUS_MAP[event.status] || STATUS_MAP.not_open;
+                  const localizedStatusLabel = t.status[event.status] || statusInfo.label;
                   return (
                     <button
                       key={event.id}
@@ -194,11 +207,11 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
                         <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-lime-400">
                           <span className="flex items-center gap-1 font-semibold">
                             <Calendar className="w-3.5 h-3.5" />
-                            {formatBangkokDateTime(event.startAt)}
+                            {formatBangkokDateTime(event.startAt, lang)}
                           </span>
                           <span className="text-neutral-500">•</span>
                           <span className="text-[11px] text-neutral-400">
-                            {formatRelativeTime(event.statusUpdatedAt)}
+                            {formatRelativeTime(event.statusUpdatedAt, lang)}
                           </span>
                         </div>
 
@@ -226,10 +239,10 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
                       {/* Status badge & Chevron */}
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono font-bold uppercase tracking-wider ${statusInfo.badgeClass}`}
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono font-bold tracking-wider ${statusInfo.badgeClass}`}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
-                          {statusInfo.label}
+                          {localizedStatusLabel}
                         </span>
                         <ChevronRight className="w-4 h-4 text-neutral-600 group-hover:text-lime-400 group-hover:translate-x-0.5 transition-all" />
                       </div>

@@ -18,9 +18,13 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const ADMIN_EMAIL = 'wantawachjz@gmail.com';
 export const ADMIN_EMAILS = [ADMIN_EMAIL];
 
-export function isUserAdmin(email: string | null | undefined): boolean {
+export function isUserAdmin(email: string | null | undefined, emailVerified?: boolean | null): boolean {
   if (!email) return false;
-  return email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isMatch = email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (emailVerified !== undefined && emailVerified !== null) {
+    return isMatch && emailVerified === true;
+  }
+  return isMatch;
 }
 
 // Error handling as required by Firebase specification

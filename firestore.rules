@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global default-deny safety net
+    // Default deny all unknown collections
     match /{document=**} {
       allow read, write: if false;
     }
@@ -11,6 +11,7 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Single strictly authorized admin: wantawachjz@gmail.com with verified email
     function isAdmin() {
       return isSignedIn()
         && request.auth.token.email_verified == true
@@ -25,22 +26,8 @@ service cloud.firestore {
       return request.resource.data;
     }
 
-    function existing() {
-      return resource.data;
-    }
-
     function isValidStatus(status) {
       return status in ['not_open', 'available', 'low', 'sold_out', 'cancelled'];
-    }
-
-    // SPARK TIER NOTE ON GET/EXISTS:
-    // This helper checks if an authenticated user owns an approved organizers/{uid} record
-    // matching the target promoterId. It is strictly evaluated on individual write mutations
-    // (create/update/delete) and NEVER on list or read queries, keeping reads minimal.
-    function isOrganizerForPromoter(promoterId) {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/organizers/$(request.auth.uid))
-        && get(/databases/$(database)/documents/organizers/$(request.auth.uid)).data.promoterId == promoterId;
     }
 
     function isValidVenue(data) {
@@ -89,23 +76,12 @@ service cloud.firestore {
         && (!('posterUrl' in data) || (data.posterUrl is string && data.posterUrl.size() <= 1000))
         && data.status is string && isValidStatus(data.status)
         && data.statusUpdatedAt is timestamp
-        && (data.statusSource in ['admin', 'organizer'])
+        && (data.statusSource in ['admin'])
         && (!('createdAt' in data) || data.createdAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
-    function isValidOrganizerRequest(data) {
-      return data.keys().hasAll(['promoterName', 'igUrl', 'contactEmail', 'note', 'status', 'createdAt'])
-        && data.keys().hasOnly(['promoterName', 'igUrl', 'contactEmail', 'note', 'status', 'createdAt'])
-        && data.promoterName is string && data.promoterName.size() >= 2 && data.promoterName.size() <= 100
-        && data.igUrl is string && data.igUrl.size() <= 300
-        && data.contactEmail is string && data.contactEmail.size() <= 150
-        && data.note is string && data.note.size() <= 1000
-        && (data.status in ['pending', 'approved', 'rejected'])
-        && data.createdAt is timestamp;
-    }
-
-    // Venues Collection
+    // 1. Venues Collection: Public read, Admin write
     match /venues/{venueId} {
       allow read: if true;
       allow create: if isAdmin() && isValidId(venueId) && isValidVenue(incoming());
@@ -113,7 +89,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(venueId);
     }
 
-    // Promoters Collection
+    // 2. Promoters Collection: Public read, Admin write
     match /promoters/{promoterId} {
       allow read: if true;
       allow create: if isAdmin() && isValidId(promoterId) && isValidPromoter(incoming());
@@ -121,61 +97,12 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(promoterId);
     }
 
-    // Events Collection & Reports Subcollection
+    // 3. Events Collection: Public read, Admin write
     match /events/{eventId} {
       allow read: if true;
-
-      // Create: Admin or verified Organizer for target promoterId
-      allow create: if (isAdmin() && isValidId(eventId) && isValidEvent(incoming()))
-        || (isOrganizerForPromoter(incoming().promoterId)
-            && isValidId(eventId)
-            && isValidEvent(incoming())
-            && incoming().statusSource == 'organizer');
-
-      // Update: Admin or verified Organizer (promoterId cannot be changed)
-      allow update: if (isAdmin() && isValidId(eventId) && isValidEvent(incoming()))
-        || (isOrganizerForPromoter(existing().promoterId)
-            && incoming().promoterId == existing().promoterId
-            && isValidId(eventId)
-            && isValidEvent(incoming())
-            && incoming().statusSource == 'organizer');
-
-      // Delete: Admin or verified Organizer for the existing event's promoter
-      allow delete: if (isAdmin() && isValidId(eventId))
-        || (isOrganizerForPromoter(existing().promoterId) && isValidId(eventId));
-
-      // Subcollection: Crowd-Reported Ticket Statuses
-      match /reports/{uid} {
-        allow read: if true;
-        allow create, update: if isSignedIn()
-          && request.auth.uid == uid
-          && incoming().keys().hasAll(['status', 'createdAt'])
-          && incoming().keys().hasOnly(['status', 'createdAt'])
-          && (incoming().status in ['available', 'low', 'sold_out'])
-          && incoming().createdAt == request.time;
-        allow delete: if isSignedIn()
-          && (request.auth.uid == uid || isAdmin());
-      }
-    }
-
-    // Organizer Requests Collection (/organizerRequests/{uid})
-    match /organizerRequests/{uid} {
-      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
-      allow create: if isSignedIn()
-        && request.auth.uid == uid
-        && isValidOrganizerRequest(incoming())
-        && incoming().status == 'pending'
-        && incoming().createdAt == request.time;
-      allow update: if isAdmin();
-      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
-    }
-
-    // Active Approved Organizers Collection (/organizers/{uid})
-    match /organizers/{uid} {
-      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
-      allow write: if isAdmin();
+      allow create: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
+      allow update: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
+      allow delete: if isAdmin() && isValidId(eventId);
     }
   }
 }

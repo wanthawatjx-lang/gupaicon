@@ -1,6 +1,7 @@
 /**
  * Date and Time utilities for gupaicon
- * All livehouse concert dates formatted in Asia/Bangkok timezone
+ * All livehouse concert dates formatted in Asia/Bangkok timezone (UTC+7)
+ * Localized for Thai ('th') and English ('en')
  */
 
 export function parseTimestampToDate(val: any): Date {
@@ -18,20 +19,21 @@ export function parseTimestampToDate(val: any): Date {
 }
 
 /**
- * Format event date in Asia/Bangkok time
- * e.g. "Fri, 30 Oct 2026 • 19:30"
+ * Format event date & time in Asia/Bangkok
+ * e.g. "ศ. 24 เม.ย. 2026 • 19:30" (th) or "Fri, 24 Apr 2026 • 19:30" (en)
  */
-export function formatBangkokDateTime(val: any): string {
+export function formatBangkokDateTime(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
+  const locale = lang === 'th' ? 'th-TH' : 'en-GB';
   try {
-    const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+    const dateFormatter = new Intl.DateTimeFormat(locale, {
       timeZone: 'Asia/Bangkok',
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     });
-    const timeFormatter = new Intl.DateTimeFormat('en-GB', {
+    const timeFormatter = new Intl.DateTimeFormat(locale, {
       timeZone: 'Asia/Bangkok',
       hour: '2-digit',
       minute: '2-digit',
@@ -45,12 +47,13 @@ export function formatBangkokDateTime(val: any): string {
 
 /**
  * Format event date only in Asia/Bangkok
- * e.g. "Fri, 30 Oct"
+ * e.g. "ศ. 24 เม.ย." (th) or "Fri, 24 Apr" (en)
  */
-export function formatBangkokDateOnly(val: any): string {
+export function formatBangkokDateOnly(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
+  const locale = lang === 'th' ? 'th-TH' : 'en-GB';
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat(locale, {
       timeZone: 'Asia/Bangkok',
       weekday: 'short',
       day: 'numeric',
@@ -80,14 +83,27 @@ export function formatBangkokTimeOnly(val: any): string {
 }
 
 /**
- * Relative time from now (e.g. "updated 5m ago", "updated 2h ago", "updated just now")
+ * Relative time from now with bilingual support
+ * e.g. "updated 5m ago" (en) or "อัปเดต 5 นาทีที่แล้ว" (th)
  */
-export function formatRelativeTime(val: any): string {
+export function formatRelativeTime(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
   const now = Date.now();
   const diffMs = now - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
 
+  if (lang === 'th') {
+    if (diffSec < 45) return 'อัปเดตเมื่อสักครู่';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `อัปเดต ${diffMin} นาทีที่แล้ว`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `อัปเดต ${diffHours} ชม. ที่แล้ว`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 30) return `อัปเดต ${diffDays} วันที่แล้ว`;
+    return `อัปเดต ${Math.floor(diffDays / 30)} เดือนที่แล้ว`;
+  }
+
+  // English fallback
   if (diffSec < 45) return 'updated just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `updated ${diffMin}m ago`;
@@ -104,7 +120,12 @@ export function formatRelativeTime(val: any): string {
 export function isDateToday(val: any): boolean {
   const date = parseTimestampToDate(val);
   const now = new Date();
-  const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' };
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  };
   return (
     new Intl.DateTimeFormat('en-US', options).format(date) ===
     new Intl.DateTimeFormat('en-US', options).format(now)
@@ -112,13 +133,13 @@ export function isDateToday(val: any): boolean {
 }
 
 /**
- * Checks if a date is within this week (starting Monday to Sunday)
+ * Checks if a date is within this week (starting Monday to Sunday) in Asia/Bangkok
  */
 export function isDateThisWeek(val: any): boolean {
   const date = parseTimestampToDate(val);
   const now = new Date();
-  
-  // Bangkok time representation
+
+  // Convert to Bangkok day boundaries
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
   const dayOfWeek = (startOfDay.getDay() + 6) % 7; // Monday = 0
   const startOfWeek = new Date(startOfDay.getTime() - dayOfWeek * 86400000);
@@ -128,7 +149,7 @@ export function isDateThisWeek(val: any): boolean {
 }
 
 /**
- * Checks if a date is within this month
+ * Checks if a date is within this month in Asia/Bangkok
  */
 export function isDateThisMonth(val: any): boolean {
   const date = parseTimestampToDate(val);
@@ -137,7 +158,7 @@ export function isDateThisMonth(val: any): boolean {
 }
 
 /**
- * Checks if an event is upcoming (startAt is after current time, or within 4 hours past start to account for ongoing concert)
+ * Checks if an event is upcoming (startAt is after current time, or within 4 hours past start)
  */
 export function isEventUpcoming(val: any): boolean {
   const date = parseTimestampToDate(val);
@@ -155,4 +176,3 @@ export function formatDateForInput(date: Date): string {
     .slice(0, 16);
   return localIso;
 }
-

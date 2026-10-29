@@ -7,17 +7,8 @@ import { ConcertEvent, EventFormData, EventStatus } from '../types/event';
 import { createVenue, updateVenue, deleteVenue, seedSampleVenues } from '../services/venueService';
 import { createPromoter, updatePromoter, deletePromoter, seedSamplePromoters } from '../services/promoterService';
 import { createEvent, updateEvent, updateEventStatus, deleteEvent, seedSampleEvents } from '../services/eventService';
-import { fetchEventRecentReportsCount, deleteAllEventReports } from '../services/reportService';
 import { STATUS_MAP } from '../utils/statusUtils';
-import { OrganizerRequest, OrganizerRecord } from '../types/organizer';
-import {
-  subscribeOrganizerRequests,
-  subscribeActiveOrganizers,
-  approveOrganizerRequest,
-  rejectOrganizerRequest,
-  revokeOrganizer,
-} from '../services/organizerService';
-import { formatBangkokDateTime, formatRelativeTime, parseTimestampToDate } from '../utils/dateUtils';
+import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
 import {
   Lock,
   LogOut,
@@ -35,12 +26,8 @@ import {
   Search,
   BadgeCheck,
   Calendar,
-  Layers,
   Music2,
   Users,
-  ShieldCheck,
-  Check,
-  Ban,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -52,7 +39,7 @@ interface AdminPanelProps {
   editingVenueInitial?: Venue | null;
 }
 
-type AdminTab = 'events' | 'venues' | 'promoters' | 'organizers';
+type AdminTab = 'events' | 'venues' | 'promoters';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
@@ -123,132 +110,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSeedingAll, setIsSeedingAll] = useState(false);
 
-  // Requirement 7: Track crowd reports count in last 90 minutes per event
-  const [reportCounts, setReportCounts] = useState<Record<string, number>>({});
-  const [clearingReportsId, setClearingReportsId] = useState<string | null>(null);
-
-  // Fetch report counts when events change or events tab is active
-  React.useEffect(() => {
-    if (activeTab === 'events' && events.length > 0) {
-      events.forEach(async (ev) => {
-        try {
-          const count = await fetchEventRecentReportsCount(ev.id);
-          setReportCounts((prev) => ({ ...prev, [ev.id]: count }));
-        } catch {
-          // ignore
-        }
-      });
-    }
-  }, [activeTab, events]);
-
-  const handleDeleteReports = async (eventId: string, eventTitle: string) => {
-    setClearingReportsId(eventId);
-    setErrorMessage(null);
-    try {
-      const deletedCount = await deleteAllEventReports(eventId);
-      setReportCounts((prev) => ({ ...prev, [eventId]: 0 }));
-      setSuccessMessage(`Deleted ${deletedCount} reports for "${eventTitle}".`);
-    } catch (err: any) {
-      console.error('Delete reports error:', err);
-      setErrorMessage(err?.message || 'Failed to delete reports.');
-    } finally {
-      setClearingReportsId(null);
-    }
-  };
-
-  const isAdmin = user ? isUserAdmin(user.email) : false;
-
-  // Organizer Requests & Approvals State
-  const [organizerRequests, setOrganizerRequests] = useState<OrganizerRequest[]>([]);
-  const [activeOrganizers, setActiveOrganizers] = useState<OrganizerRecord[]>([]);
-  const [approvingRequest, setApprovingRequest] = useState<OrganizerRequest | null>(null);
-  const [approvalMode, setApprovalMode] = useState<'existing' | 'new'>('existing');
-  const [selectedPromoterId, setSelectedPromoterId] = useState<string>('');
-  const [newPromoterName, setNewPromoterName] = useState<string>('');
-  const [newPromoterIgUrl, setNewPromoterIgUrl] = useState<string>('');
-  const [isProcessingApproval, setIsProcessingApproval] = useState(false);
-  const [revokingUid, setRevokingUid] = useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!user || !isAdmin) return;
-    const unsubReqs = subscribeOrganizerRequests((reqs) => setOrganizerRequests(reqs));
-    const unsubOrgs = subscribeActiveOrganizers((orgs) => setActiveOrganizers(orgs));
-    return () => {
-      unsubReqs();
-      unsubOrgs();
-    };
-  }, [user, isAdmin]);
-
-  const handleStartApprove = (req: OrganizerRequest) => {
-    setApprovingRequest(req);
-    const matching = promoters.find((p) => p.name.toLowerCase() === req.promoterName.toLowerCase());
-    if (matching) {
-      setApprovalMode('existing');
-      setSelectedPromoterId(matching.id);
-    } else {
-      setApprovalMode('new');
-      setSelectedPromoterId(promoters[0]?.id || '');
-    }
-    setNewPromoterName(req.promoterName);
-    setNewPromoterIgUrl(req.igUrl);
-  };
-
-  const handleConfirmApprove = async () => {
-    if (!approvingRequest) return;
-    setIsProcessingApproval(true);
-    setErrorMessage(null);
-    try {
-      let finalPromoterId = selectedPromoterId;
-      if (approvalMode === 'new') {
-        if (!newPromoterName.trim()) {
-          throw new Error('New promoter name is required.');
-        }
-        finalPromoterId = await createPromoter({
-          name: newPromoterName.trim(),
-          igUrl: newPromoterIgUrl.trim(),
-          verified: true,
-        });
-      }
-
-      await approveOrganizerRequest(
-        approvingRequest.id,
-        finalPromoterId,
-        approvingRequest.contactEmail
-      );
-      setSuccessMessage(`Approved organizer for "${approvingRequest.promoterName}"!`);
-      setApprovingRequest(null);
-    } catch (err: any) {
-      console.error('Approve organizer error:', err);
-      setErrorMessage(err?.message || 'Failed to approve organizer request.');
-    } finally {
-      setIsProcessingApproval(false);
-    }
-  };
-
-  const handleRejectRequest = async (reqId: string, promoterName: string) => {
-    if (!confirm(`Reject organizer verification request for "${promoterName}"?`)) return;
-    try {
-      await rejectOrganizerRequest(reqId);
-      setSuccessMessage(`Rejected request for "${promoterName}".`);
-    } catch (err: any) {
-      console.error('Reject organizer error:', err);
-      setErrorMessage(err?.message || 'Failed to reject request.');
-    }
-  };
-
-  const handleRevokeOrganizer = async (uid: string, email: string) => {
-    if (!confirm(`Revoke verified organizer rights for "${email}"?`)) return;
-    setRevokingUid(uid);
-    try {
-      await revokeOrganizer(uid);
-      setSuccessMessage(`Revoked organizer rights for "${email}".`);
-    } catch (err: any) {
-      console.error('Revoke organizer error:', err);
-      setErrorMessage(err?.message || 'Failed to revoke organizer rights.');
-    } finally {
-      setRevokingUid(null);
-    }
-  };
+  const isAdmin = user ? isUserAdmin(user.email, user.emailVerified) : false;
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
@@ -272,7 +134,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // --- Seed All Sample Data ---
+  // --- Seed All Sample Data (Requirement 7) ---
   const handleSeedAll = async () => {
     setIsSeedingAll(true);
     setErrorMessage(null);
@@ -297,7 +159,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setStatusUpdatingId(eventId);
     setErrorMessage(null);
     try {
-      await updateEventStatus(eventId, newStatus);
+      await updateEventStatus(eventId, newStatus, 'admin');
       setSuccessMessage(`Updated event status to "${STATUS_MAP[newStatus].label}"`);
     } catch (err: any) {
       console.error('Failed to update event status:', err);
@@ -447,10 +309,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setErrorMessage(null);
     try {
       if (editingEventId) {
-        await updateEvent(editingEventId, eventFormData);
+        await updateEvent(editingEventId, eventFormData, 'admin');
         setSuccessMessage(`Updated event "${eventFormData.title}"!`);
       } else {
-        await createEvent(eventFormData);
+        await createEvent(eventFormData, undefined, 'admin');
         setSuccessMessage(`Created event "${eventFormData.title}"!`);
       }
       setIsEventFormOpen(false);
@@ -586,8 +448,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Signed in as: <strong className="text-white font-mono">{user.email}</strong>
               </p>
               <p className="text-neutral-400 text-xs mb-6">
-                Only <span className="text-lime-400 font-mono font-bold">{ADMIN_EMAIL}</span> is
-                authorized to modify livehouse data.
+                Only <span className="text-lime-400 font-mono font-bold">{ADMIN_EMAIL}</span> with verified email is authorized to modify livehouse data.
               </p>
               <button
                 type="button"
@@ -686,25 +547,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>Promoters ({promoters.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('organizers');
-                    setSearchQuery('');
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer relative ${
-                    activeTab === 'organizers'
-                      ? 'bg-lime-400 text-black shadow-md'
-                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
-                >
-                  <BadgeCheck className="w-3.5 h-3.5" />
-                  <span>Organizers ({activeOrganizers.length})</span>
-                  {organizerRequests.filter((r) => r.status === 'pending').length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping absolute top-2 right-2" />
-                  )}
                 </button>
               </div>
 
@@ -996,111 +838,132 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         const hostPromoter = promoters.find((p) => p.id === ev.promoterId);
                         const statusInfo = STATUS_MAP[ev.status] || STATUS_MAP.not_open;
                         const isUpdatingThis = statusUpdatingId === ev.id;
+                        const isSample = ev.title.toUpperCase().startsWith('SAMPLE');
 
                         return (
                           <div
                             key={ev.id}
-                            className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                            className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all space-y-3"
                           >
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-bold text-white truncate">{ev.title}</h4>
-                                {ev.title.toUpperCase().startsWith('SAMPLE') && (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-600/40 text-[9px] font-mono text-amber-300">
-                                    SAMPLE
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono font-bold uppercase tracking-wider ${statusInfo.badgeClass}`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`}
+                                    />
+                                    {statusInfo.label}
                                   </span>
-                                )}
+
+                                  {isSample && (
+                                    <span className="px-1.5 py-0.2 rounded bg-neutral-800 text-[10px] font-mono text-amber-300 border border-amber-400/20">
+                                      SAMPLE
+                                    </span>
+                                  )}
+
+                                  <span className="text-xs font-mono text-neutral-400 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-neutral-500" />
+                                    {formatBangkokDateTime(ev.startAt, 'en')}
+                                  </span>
+                                </div>
+
+                                <h3 className="text-sm font-bold text-white leading-snug">
+                                  {ev.title}
+                                </h3>
+
+                                <div className="text-xs text-neutral-400 flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                                  <span>
+                                    Venue:{' '}
+                                    <strong className="text-neutral-200">
+                                      {hostVenue ? hostVenue.name : 'Unknown'}
+                                    </strong>
+                                  </span>
+                                  <span>•</span>
+                                  <span>
+                                    Promoter:{' '}
+                                    <strong className="text-neutral-200">
+                                      {hostPromoter ? hostPromoter.name : 'Unknown'}
+                                    </strong>
+                                  </span>
+                                  <span>•</span>
+                                  <span className="text-lime-400 font-mono font-medium">
+                                    {ev.priceText}
+                                  </span>
+                                </div>
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400 font-mono">
-                                <span>{formatBangkokDateTime(ev.startAt)}</span>
-                                <span>•</span>
-                                <span className="text-lime-400 truncate max-w-[140px]">
-                                  {hostVenue?.name || 'Unknown Venue'}
-                                </span>
-                                <span>•</span>
-                                <span className="text-neutral-300 truncate max-w-[120px]">
-                                  {hostPromoter?.name || 'Independent'}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                                <span className="truncate max-w-[240px]">
-                                  {ev.artists.join(', ')}
-                                </span>
-                                <span>({ev.priceText})</span>
-                              </div>
-
-                              {/* Requirement 7: Crowd reports in last 90 minutes & Spam cleanup */}
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-neutral-400 pt-1">
-                                <span className="inline-flex items-center gap-1 text-neutral-300">
-                                  <Users className="w-3 h-3 text-lime-400" />
-                                  <span>{reportCounts[ev.id] ?? 0} crowd reports (90m)</span>
-                                </span>
-                                <span className="text-neutral-600">•</span>
+                              {/* Edit & Delete Controls */}
+                              <div className="flex items-center gap-1 shrink-0">
                                 <button
                                   type="button"
-                                  disabled={clearingReportsId === ev.id}
-                                  onClick={() => handleDeleteReports(ev.id, ev.title)}
-                                  className="text-rose-400 hover:text-rose-300 hover:underline font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                  title="Delete all reports for this event (spam cleanup)"
+                                  onClick={() => handleOpenEditEvent(ev)}
+                                  className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                                  title="Edit Event"
                                 >
-                                  {clearingReportsId === ev.id ? (
-                                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-2.5 h-2.5" />
-                                  )}
-                                  <span>Delete all reports</span>
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'event',
+                                      id: ev.id,
+                                      title: ev.title,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+                                  title="Delete Event"
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
 
-                            {/* One-Tap Status Selector + Actions */}
-                            <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-800/80">
-                              {/* One-Tap Status Select Dropdown (Requirement 6) */}
-                              <div className="relative">
-                                <select
-                                  value={ev.status}
-                                  disabled={isUpdatingThis}
-                                  onChange={(e) =>
-                                    handleQuickStatusChange(ev.id, e.target.value as EventStatus)
-                                  }
-                                  className={`text-xs font-mono font-bold px-2.5 py-1.5 rounded-xl border appearance-none pr-7 cursor-pointer transition-all ${statusInfo.badgeClass}`}
-                                >
-                                  <option value="available">● Available</option>
-                                  <option value="low">● Low</option>
-                                  <option value="sold_out">● Sold out</option>
-                                  <option value="not_open">● Not open</option>
-                                  <option value="cancelled">● Cancelled</option>
-                                </select>
-                                {isUpdatingThis && (
-                                  <RefreshCw className="w-3 h-3 animate-spin text-lime-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                )}
+                            {/* One-Tap Status Switcher Bar (Requirement 6) */}
+                            <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">
+                                Quick Status:
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {(
+                                  [
+                                    'available',
+                                    'low',
+                                    'sold_out',
+                                    'not_open',
+                                    'cancelled',
+                                  ] as EventStatus[]
+                                ).map((st) => {
+                                  const isCurrent = ev.status === st;
+                                  return (
+                                    <button
+                                      key={st}
+                                      type="button"
+                                      disabled={isUpdatingThis}
+                                      onClick={() => handleQuickStatusChange(ev.id, st)}
+                                      className={`px-2 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer ${
+                                        isCurrent
+                                          ? 'bg-neutral-100 text-black font-bold shadow-xs'
+                                          : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+                                      }`}
+                                    >
+                                      {STATUS_MAP[st].label}
+                                    </button>
+                                  );
+                                })}
                               </div>
-
-                              {/* Edit & Delete */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditEvent(ev)}
-                                className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                                title="Edit Event"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDeleteTarget({ type: 'event', id: ev.id, title: ev.title })
-                                }
-                                className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
-                                title="Delete Event"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
                             </div>
                           </div>
                         );
                       })}
+
+                    {events.length === 0 && (
+                      <div className="py-12 text-center text-xs text-neutral-500">
+                        No events recorded yet. Click &ldquo;Seed All Samples&rdquo; or &ldquo;New Event&rdquo; to add shows.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1108,7 +971,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {/* ==================== TAB 2: VENUES ==================== */}
               {activeTab === 'venues' && (
                 <div className="space-y-4">
-                  {/* Actions Header */}
                   <div className="flex items-center justify-between gap-3">
                     <button
                       type="button"
@@ -1137,7 +999,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
                         <h3 className="text-sm font-bold text-white uppercase font-mono flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-lime-400" />
-                          {editingVenueId ? 'Edit Venue' : 'Create Venue'}
+                          {editingVenueId ? 'Edit Venue' : 'Create New Venue'}
                         </h3>
                         <button
                           type="button"
@@ -1160,7 +1022,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onChange={(e) =>
                               setVenueFormData({ ...venueFormData, name: e.target.value })
                             }
-                            placeholder="e.g. De Commune / Speakerbox"
+                            placeholder="e.g. SAMPLE Venue Alpha"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
                           />
                         </div>
@@ -1181,7 +1043,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   lat: parseFloat(e.target.value) || 0,
                                 })
                               }
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-lime-400"
                             />
                           </div>
                           <div>
@@ -1199,22 +1061,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   lng: parseFloat(e.target.value) || 0,
                                 })
                               }
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-lime-400"
+                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-lime-400"
                             />
                           </div>
                         </div>
 
                         <div>
                           <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Address / Area <span className="text-lime-400">*</span>
+                            Address <span className="text-lime-400">*</span>
                           </label>
-                          <textarea
+                          <input
+                            type="text"
                             required
-                            rows={2}
                             value={venueFormData.address}
                             onChange={(e) =>
                               setVenueFormData({ ...venueFormData, address: e.target.value })
                             }
+                            placeholder="e.g. 101 Phra Nakhon, Bangkok"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
                           />
                         </div>
@@ -1236,7 +1099,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Maps URL
+                              Google Maps URL
                             </label>
                             <input
                               type="url"
@@ -1272,41 +1135,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   )}
 
                   {/* Venues List */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {venues
-                      .filter((v) => v.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map((venue) => (
-                        <div
-                          key={venue.id}
-                          className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-sm font-bold text-white truncate">{venue.name}</h4>
-                            <p className="text-xs text-neutral-400 truncate">{venue.address}</p>
-                            <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
-                              {venue.lat.toFixed(4)}, {venue.lng.toFixed(4)}
+                      .filter(
+                        (v) =>
+                          v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          v.address.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((v) => {
+                        const isSample = v.name.toUpperCase().startsWith('SAMPLE');
+                        return (
+                          <div
+                            key={v.id}
+                            className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-start justify-between gap-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-white truncate">{v.name}</h3>
+                                {isSample && (
+                                  <span className="px-1.5 py-0.2 rounded bg-neutral-800 text-[10px] font-mono text-amber-300 border border-amber-400/20">
+                                    SAMPLE
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                                <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
+                                <span className="truncate">{v.address}</span>
+                              </div>
+                              <div className="text-[11px] font-mono text-neutral-500">
+                                {v.lat.toFixed(4)}, {v.lng.toFixed(4)}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditVenue(v)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                                title="Edit Venue"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    type: 'venue',
+                                    id: v.id,
+                                    title: v.name,
+                                  })
+                                }
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+                                title="Delete Venue"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditVenue(venue)}
-                              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setDeleteTarget({ type: 'venue', id: venue.id, title: venue.name })
-                              }
-                              className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               )}
@@ -1314,7 +1201,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {/* ==================== TAB 3: PROMOTERS ==================== */}
               {activeTab === 'promoters' && (
                 <div className="space-y-4">
-                  {/* Actions Header */}
                   <div className="flex items-center justify-between gap-3">
                     <button
                       type="button"
@@ -1343,7 +1229,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-neutral-800">
                         <h3 className="text-sm font-bold text-white uppercase font-mono flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-lime-400" />
-                          {editingPromoterId ? 'Edit Promoter' : 'Create Promoter'}
+                          {editingPromoterId ? 'Edit Promoter' : 'Create New Promoter'}
                         </h3>
                         <button
                           type="button"
@@ -1357,7 +1243,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <form onSubmit={handlePromoterFormSubmit} className="space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Promoter Name <span className="text-lime-400">*</span>
+                            Promoter / Collective Name <span className="text-lime-400">*</span>
                           </label>
                           <input
                             type="text"
@@ -1366,7 +1252,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onChange={(e) =>
                               setPromoterFormData({ ...promoterFormData, name: e.target.value })
                             }
-                            placeholder="e.g. Loud Wave Collective / DIY Sounds"
+                            placeholder="e.g. SAMPLE Loud Wave Collective"
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
                           />
                         </div>
@@ -1381,12 +1267,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             onChange={(e) =>
                               setPromoterFormData({ ...promoterFormData, igUrl: e.target.value })
                             }
-                            placeholder="https://instagram.com/promoter_handle"
+                            placeholder="https://instagram.com/..."
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
                           />
                         </div>
 
-                        {/* Verified Checkbox */}
                         <div className="flex items-center gap-2 pt-1">
                           <input
                             type="checkbox"
@@ -1398,14 +1283,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 verified: e.target.checked,
                               })
                             }
-                            className="w-4 h-4 accent-lime-400 rounded cursor-pointer"
+                            className="w-4 h-4 rounded text-lime-400 bg-neutral-950 border-neutral-800 focus:ring-lime-400"
                           />
                           <label
                             htmlFor="promoter-verified"
-                            className="text-xs text-neutral-200 cursor-pointer flex items-center gap-1.5"
+                            className="text-xs font-medium text-neutral-200 cursor-pointer flex items-center gap-1.5"
                           >
-                            <span>Verified Promoter (shows blue/verified checkmark badge)</span>
                             <BadgeCheck className="w-4 h-4 text-sky-400" />
+                            <span>Verified Organizer Checkmark</span>
                           </label>
                         </div>
 
@@ -1431,396 +1316,110 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   )}
 
                   {/* Promoters List */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {promoters
                       .filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map((promoter) => (
-                        <div
-                          key={promoter.id}
-                          className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <h4 className="text-sm font-bold text-white truncate">
-                                {promoter.name}
-                              </h4>
-                              {promoter.verified && (
-                                <span title="Verified Promoter" className="inline-flex items-center">
-                                  <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-neutral-400 font-mono truncate">
-                              {promoter.igUrl || 'No IG linked'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditPromoter(promoter)}
-                              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'promoter',
-                                  id: promoter.id,
-                                  title: promoter.name,
-                                })
-                              }
-                              className="p-2 text-neutral-400 hover:text-red-400 rounded-lg hover:bg-red-950/30 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ==================== TAB 4: ORGANIZERS ==================== */}
-              {activeTab === 'organizers' && (
-                <div className="space-y-6">
-                  {/* Approval Modal if an applicant is selected */}
-                  {approvingRequest && (
-                    <div className="p-4 rounded-2xl bg-neutral-900/90 border border-lime-400/50 shadow-2xl space-y-4 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                        <div className="flex items-center gap-2">
-                          <BadgeCheck className="w-4 h-4 text-sky-400" />
-                          <h3 className="text-sm font-bold text-white uppercase font-mono">
-                            Approve Organizer: {approvingRequest.promoterName}
-                          </h3>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setApprovingRequest(null)}
-                          className="text-neutral-400 hover:text-white p-1 rounded"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <div className="text-xs text-neutral-300 font-mono space-y-1 bg-neutral-950 p-3 rounded-xl border border-neutral-800">
-                        <div>
-                          Applicant: <strong className="text-white">{approvingRequest.contactEmail}</strong>
-                        </div>
-                        <div>
-                          Instagram:{' '}
-                          <a
-                            href={approvingRequest.igUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-pink-400 hover:underline"
-                          >
-                            {approvingRequest.igUrl}
-                          </a>
-                        </div>
-                        <div>
-                          Note: <span className="text-neutral-400">{approvingRequest.note}</span>
-                        </div>
-                      </div>
-
-                      {/* Choose Link Option: Existing or New */}
-                      <div className="space-y-3">
-                        <label className="block text-xs font-mono uppercase text-neutral-400">
-                          Link to Promoter Profile:
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setApprovalMode('existing')}
-                            className={`py-2 px-3 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
-                              approvalMode === 'existing'
-                                ? 'bg-lime-400 text-black border-lime-400'
-                                : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'
-                            }`}
-                          >
-                            Link Existing Promoter
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setApprovalMode('new')}
-                            className={`py-2 px-3 rounded-xl text-xs font-mono font-bold border transition-colors cursor-pointer ${
-                              approvalMode === 'new'
-                                ? 'bg-lime-400 text-black border-lime-400'
-                                : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'
-                            }`}
-                          >
-                            + Create New Verified Promoter
-                          </button>
-                        </div>
-
-                        {approvalMode === 'existing' ? (
-                          <div>
-                            <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Choose Promoter <span className="text-lime-400">*</span>
-                            </label>
-                            <select
-                              value={selectedPromoterId}
-                              onChange={(e) => setSelectedPromoterId(e.target.value)}
-                              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                            >
-                              <option value="">Select promoter...</option>
-                              {promoters.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} {p.verified ? '✓' : ''} ({p.igUrl || 'no ig'})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div>
-                              <label className="block text-xs font-medium text-neutral-300 mb-1">
-                                New Promoter Name <span className="text-lime-400">*</span>
-                              </label>
-                              <input
-                                type="text"
-                                value={newPromoterName}
-                                onChange={(e) => setNewPromoterName(e.target.value)}
-                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-neutral-300 mb-1">
-                                Promoter Instagram URL
-                              </label>
-                              <input
-                                type="url"
-                                value={newPromoterIgUrl}
-                                onChange={(e) => setNewPromoterIgUrl(e.target.value)}
-                                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
-                              />
-                            </div>
-                            <p className="text-[11px] text-lime-400 font-mono">
-                              ✓ Automatically marked as verified: true
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
-                        <button
-                          type="button"
-                          onClick={() => setApprovingRequest(null)}
-                          className="px-3 py-1.5 rounded-xl bg-neutral-800 text-xs font-medium text-neutral-400 hover:text-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            isProcessingApproval ||
-                            (approvalMode === 'existing' && !selectedPromoterId)
-                          }
-                          onClick={handleConfirmApprove}
-                          className="px-4 py-2 rounded-xl bg-lime-400 text-black text-xs font-bold hover:bg-lime-300 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-md"
-                        >
-                          {isProcessingApproval && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                          <span>Confirm & Grant Organizer Access</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Pending Requests Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-lime-400" />
-                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                          Pending Organizer Requests
-                        </h3>
-                      </div>
-                      <span className="text-xs font-mono text-neutral-400">
-                        {organizerRequests.filter((r) => r.status === 'pending').length} pending
-                      </span>
-                    </div>
-
-                    {organizerRequests.length === 0 ? (
-                      <div className="p-6 text-center rounded-2xl bg-neutral-900/40 border border-dashed border-neutral-800 text-neutral-500 text-xs font-mono">
-                        No organizer verification requests found.
-                      </div>
-                    ) : (
-                      <div className="space-y-2.5">
-                        {organizerRequests.map((req) => (
+                      .map((p) => {
+                        const isSample = p.name.toUpperCase().startsWith('SAMPLE');
+                        return (
                           <div
-                            key={req.id}
-                            className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                            key={p.id}
+                            className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
                           >
                             <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-bold text-white truncate">{req.promoterName}</h4>
-                                <span
-                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                                    req.status === 'pending'
-                                      ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                                      : req.status === 'approved'
-                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                                      : 'bg-rose-950 text-rose-300 border border-rose-800'
-                                  }`}
-                                >
-                                  {req.status}
-                                </span>
+                                <h3 className="text-sm font-bold text-white truncate">{p.name}</h3>
+                                {p.verified && (
+                                  <span title="Verified Promoter">
+                                    <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
+                                  </span>
+                                )}
+                                {isSample && (
+                                  <span className="px-1.5 py-0.2 rounded bg-neutral-800 text-[10px] font-mono text-amber-300 border border-amber-400/20">
+                                    SAMPLE
+                                  </span>
+                                )}
                               </div>
-
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400 font-mono">
-                                <span>{req.contactEmail}</span>
-                                <span>•</span>
+                              {p.igUrl && (
                                 <a
-                                  href={req.igUrl}
+                                  href={p.igUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-pink-400 hover:underline truncate max-w-[200px]"
+                                  className="text-xs text-neutral-400 hover:text-pink-400 flex items-center gap-1 truncate"
                                 >
-                                  {req.igUrl}
+                                  <Instagram className="w-3 h-3 text-pink-400 shrink-0" />
+                                  <span className="truncate">{p.igUrl}</span>
                                 </a>
-                                <span>•</span>
-                                <span>{formatRelativeTime(req.createdAt)}</span>
-                              </div>
-
-                              <p className="text-xs text-neutral-300 bg-neutral-950/80 p-2 rounded-lg border border-neutral-800/80">
-                                <strong className="text-neutral-400">Note:</strong> {req.note}
-                              </p>
+                              )}
                             </div>
 
-                            {/* Actions for pending */}
-                            {req.status === 'pending' && (
-                              <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartApprove(req)}
-                                  className="px-3 py-1.5 rounded-xl bg-lime-400 text-black text-xs font-bold hover:bg-lime-300 transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Approve</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRejectRequest(req.id, req.promoterName)}
-                                  className="px-3 py-1.5 rounded-xl bg-neutral-800 text-rose-400 hover:bg-rose-950/40 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer border border-neutral-700 hover:border-rose-800"
-                                >
-                                  <Ban className="w-3.5 h-3.5" />
-                                  <span>Reject</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Active Verified Organizers Section */}
-                  <div className="space-y-3 pt-4 border-t border-neutral-800">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-sky-400" />
-                        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                          Active Verified Organizers
-                        </h3>
-                      </div>
-                      <span className="text-xs font-mono text-neutral-400">
-                        {activeOrganizers.length} active
-                      </span>
-                    </div>
-
-                    {activeOrganizers.length === 0 ? (
-                      <div className="p-6 text-center rounded-2xl bg-neutral-900/40 border border-dashed border-neutral-800 text-neutral-500 text-xs font-mono">
-                        No active organizers provisioned yet.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {activeOrganizers.map((org) => {
-                          const linkedPromoter = promoters.find((p) => p.id === org.promoterId);
-                          return (
-                            <div
-                              key={org.uid}
-                              className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex items-center justify-between gap-3"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <h4 className="text-sm font-bold text-white truncate">
-                                    {linkedPromoter?.name || 'Promoter Profile'}
-                                  </h4>
-                                  <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
-                                  <span className="text-xs font-mono text-neutral-400 truncate">
-                                    ({org.email})
-                                  </span>
-                                </div>
-                                <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
-                                  UID: {org.uid.slice(0, 10)}... • Approved{' '}
-                                  {formatRelativeTime(org.approvedAt)}
-                                </div>
-                              </div>
-
+                            <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
-                                disabled={revokingUid === org.uid}
-                                onClick={() => handleRevokeOrganizer(org.uid, org.email)}
-                                className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-rose-950/60 text-rose-400 border border-neutral-700 hover:border-rose-700 text-xs font-mono font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                title="Revoke organizer rights"
+                                onClick={() => handleOpenEditPromoter(p)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                                title="Edit Promoter"
                               >
-                                {revokingUid === org.uid ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                )}
-                                <span>Revoke</span>
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    type: 'promoter',
+                                    id: p.id,
+                                    title: p.name,
+                                  })
+                                }
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+                                title="Delete Promoter"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               )}
             </div>
           )}
         </div>
+      </div>
 
-        {/* Delete Confirmation Modal */}
-        {deleteTarget && (
-          <div className="fixed inset-0 z-1200 bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-neutral-900 border border-red-900/60 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
-              <h4 className="text-base font-bold text-white mb-2 flex items-center gap-2 text-red-400">
-                <AlertTriangle className="w-5 h-5" />
-                Confirm Deletion
-              </h4>
-              <p className="text-neutral-300 text-xs mb-1">
-                Are you sure you want to delete this {deleteTarget.type}?
-              </p>
-              <p className="text-white text-xs font-bold font-mono mb-5 truncate">
-                "{deleteTarget.title}"
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDeleteTarget(null)}
-                  disabled={isDeleting}
-                  className="px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDelete}
-                  disabled={isDeleting}
-                  className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
-                >
-                  {isDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Delete</span>
-                </button>
-              </div>
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-1200 bg-black/80 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-neutral-900 border border-neutral-800 p-5 shadow-2xl space-y-3">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <span>Confirm Deletion</span>
+            </h3>
+            <p className="text-xs text-neutral-300">
+              Are you sure you want to permanently delete the {deleteTarget.type}: &ldquo;{deleteTarget.title}&rdquo;?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:bg-neutral-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Delete</span>
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
