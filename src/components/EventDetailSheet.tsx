@@ -190,10 +190,9 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 >
                   <span className="truncate">{promoter.name}</span>
                   {promoter.verified && (
-                    <BadgeCheck
-                      className="w-4 h-4 text-sky-400 shrink-0"
-                      title="Verified Promoter"
-                    />
+                    <span title="Verified Promoter" className="inline-flex items-center">
+                      <BadgeCheck className="w-4 h-4 text-sky-400 shrink-0" />
+                    </span>
                   )}
                   <ExternalLink className="w-3 h-3 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </a>
