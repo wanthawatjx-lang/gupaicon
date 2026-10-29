@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email == 'wantawachjz@gmail.com' || request.auth.token.email == 'wanthawatjx@gmail.com');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidVenue(data) {
+      return data.keys().hasAll(['name', 'lat', 'lng', 'address', 'igUrl', 'mapsUrl'])
+        && data.keys().hasOnly(['name', 'lat', 'lng', 'address', 'igUrl', 'mapsUrl', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && (data.lat is int || data.lat is float)
+        && (data.lng is int || data.lng is float)
+        && data.address is string && data.address.size() >= 2 && data.address.size() <= 250
+        && data.igUrl is string && data.igUrl.size() <= 300
+        && data.mapsUrl is string && data.mapsUrl.size() <= 500
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /venues/{venueId} {
+      // Anyone can read venues
+      allow read: if true;
+
+      // Only verified admin can create venues with valid schema
+      allow create: if isAdmin()
+        && isValidId(venueId)
+        && isValidVenue(incoming());
+
+      // Only verified admin can update venues with valid schema
+      allow update: if isAdmin()
+        && isValidId(venueId)
+        && isValidVenue(incoming());
+
+      // Only verified admin can delete venues
+      allow delete: if isAdmin()
+        && isValidId(venueId);
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "venue": {
+      "title": "Venue",
+      "description": "An indie / livehouse concert venue in Bangkok or Pathum Thani",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the venue",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude coordinate"
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude coordinate"
+        },
+        "address": {
+          "type": "string",
+          "description": "Physical address or landmark area",
+          "minLength": 2,
+          "maxLength": 250
+        },
+        "igUrl": {
+          "type": "string",
+          "description": "Instagram profile or post URL",
+          "maxLength": 300
+        },
+        "mapsUrl": {
+          "type": "string",
+          "description": "Google Maps, Apple Maps, or web mapping link",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": [
+        "name",
+        "lat",
+        "lng",
+        "address",
+        "igUrl",
+        "mapsUrl"
+      ]
+    }
+  },
+  "firestore": {
+    "/venues/{venueId}": {
+      "schema": "venue",
+      "description": "Collection of indie / livehouse concert venues in Bangkok and Pathum Thani"
+    }
+  }
+}

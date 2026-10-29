@@ -1,0 +1,29 @@
+[
+  {
+    "id": "sample-venue-1",
+    "name": "SAMPLE Venue Alpha - Bangkok Central",
+    "lat": 13.7563,
+    "lng": 100.5018,
+    "address": "SAMPLE Address 101, Phra Nakhon, Bangkok 10200",
+    "igUrl": "https://instagram.com/sample_venue_alpha",
+    "mapsUrl": "https://maps.google.com/?q=13.7563,100.5018"
+  },
+  {
+    "id": "sample-venue-2",
+    "name": "SAMPLE Livehouse Beta - Chatuchak / Bang Sue",
+    "lat": 13.8050,
+    "lng": 100.5500,
+    "address": "SAMPLE Address 202, Chatuchak, Bangkok 10900",
+    "igUrl": "https://instagram.com/sample_livehouse_beta",
+    "mapsUrl": "https://maps.google.com/?q=13.8050,100.5500"
+  },
+  {
+    "id": "sample-venue-3",
+    "name": "SAMPLE Underground Space Gamma - Rangsit",
+    "lat": 13.9890,
+    "lng": 100.6170,
+    "address": "SAMPLE Address 303, Khlong Nueng, Khlong Luang, Pathum Thani 12120",
+    "igUrl": "https://instagram.com/sample_space_gamma",
+    "mapsUrl": "https://maps.google.com/?q=13.9890,100.6170"
+  }
+]

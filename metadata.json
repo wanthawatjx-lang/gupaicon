@@ -1,0 +1,8 @@
+{
+  "name": "gupaicon",
+  "description": "Map of indie and livehouse concerts in Bangkok and Rangsit/Pathum Thani, Thailand.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
