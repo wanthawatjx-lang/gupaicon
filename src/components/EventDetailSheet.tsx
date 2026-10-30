@@ -422,6 +422,16 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
               </a>
             ) : null}
           </div>
+
+          {/* Report a problem mailto link (Requirement 4) */}
+          <div className="pt-3 text-center">
+            <a
+              href={`mailto:wantawachjz@gmail.com?subject=${encodeURIComponent(`Problem regarding event: ${event.title}`)}`}
+              className="text-xs font-mono text-neutral-500 hover:text-neutral-300 underline underline-offset-2 transition-colors"
+            >
+              {t.eventDetail.reportAProblem}
+            </a>
+          </div>
         </div>
       </div>
     </>

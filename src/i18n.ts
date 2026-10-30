@@ -1,5 +1,5 @@
 /**
- * Bilingual translations for กูไกูปคอน (gupaicon)
+ * Bilingual translations for กูไปคอน (gupaicon)
  * Single dictionary file with th and en objects.
  * Default language is 'th'.
  */
@@ -73,6 +73,30 @@ export interface TranslationDictionary {
     signInToReport: string;
     thanksReported: (statusText: string) => string;
     changeReport: string;
+    reportAProblem: string;
+  };
+  footer: {
+    disclaimer: string;
+    privacyLink: string;
+  };
+  privacy: {
+    title: string;
+    backToMap: string;
+    heading1: string;
+    content1: string;
+    heading2: string;
+    content2: string;
+    heading3: string;
+    content3: string;
+    heading4: string;
+    content4: string;
+  };
+  states: {
+    offlineTitle: string;
+    offlineMessage: string;
+    errorTitle: string;
+    errorMessage: string;
+    retry: string;
   };
   relativeTime: {
     justNow: string;
@@ -171,6 +195,30 @@ export const translations: Record<Language, TranslationDictionary> = {
       signInToReport: 'ลงชื่อเข้าใช้เพื่อรายงานสถานะ',
       thanksReported: (st) => `ขอบคุณที่คุณรายงานสถานะ: ${st}`,
       changeReport: 'เปลี่ยนสถานะที่รายงาน',
+      reportAProblem: 'แจ้งปัญหา / ส่งข้อเสนอแนะเกี่ยวกับงานนี้',
+    },
+    footer: {
+      disclaimer: 'สถานะบัตรมาจากผู้ใช้และอาจคลาดเคลื่อน โปรดตรวจสอบกับหน้าขายบัตรอย่างเป็นทางการอีกครั้ง',
+      privacyLink: 'นโยบายความเป็นส่วนตัว (Privacy Policy)',
+    },
+    privacy: {
+      title: 'นโยบายความเป็นส่วนตัว (Privacy Policy)',
+      backToMap: 'กลับสู่แผนที่',
+      heading1: 'ข้อมูลที่เราจัดเก็บ',
+      content1: 'เราจัดเก็บหมายเลขบัญชีผู้ใช้ Google (UID) เมื่อท่านเข้าสู่ระบบเพื่อรายงานสถานะบัตร รวมถึงข้อมูลสถานะบัตรที่ท่านส่งเข้ามา และอีเมลของแอดมินสำหรับการจัดการระบบ',
+      heading2: 'การใช้งานข้อมูล',
+      content2: 'ข้อมูลทั้งหมดใช้เพื่อการแสดงผลสถานะบัตรภายในแอปพลิเคชันกูไปคอน (gupaicon) เท่านั้น',
+      heading3: 'ไม่มีการขายข้อมูลหรือโฆษณา',
+      content3: 'เราไม่มีนโยบายแสดงโฆษณา ไม่มีการขายหรือเปิดเผยข้อมูลส่วนบุคคลของท่านให้แก่บุคคลที่สาม',
+      heading4: 'การติดต่อและการขอลบข้อมูล',
+      content4: 'ท่านสามารถติดต่อสอบถาม หรือส่งคำขอให้ลบข้อมูลรายงานสถานะหรือบัญชีของท่านได้โดยตรงที่อีเมล wantawachjz@gmail.com',
+    },
+    states: {
+      offlineTitle: 'คุณกำลังออฟไลน์',
+      offlineMessage: 'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตของคุณ',
+      errorTitle: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
+      errorMessage: 'ไม่สามารถเชื่อมต่อกับฐานข้อมูล Firestore ได้ในขณะนี้',
+      retry: 'ลองใหม่อีกครั้ง',
     },
     relativeTime: {
       justNow: 'เมื่อสักครู่',
@@ -267,6 +315,30 @@ export const translations: Record<Language, TranslationDictionary> = {
       signInToReport: 'Sign in to report',
       thanksReported: (st) => `Thanks, you reported: ${st}`,
       changeReport: 'Change report',
+      reportAProblem: 'Report a problem regarding this event',
+    },
+    footer: {
+      disclaimer: 'Ticket status is reported by users and may be wrong. Always confirm on the official ticket page.',
+      privacyLink: 'Privacy Policy',
+    },
+    privacy: {
+      title: 'Privacy Policy',
+      backToMap: 'Back to map',
+      heading1: 'Information We Store',
+      content1: 'We store your Google account ID (UID) when you sign in to report ticket status, the status reports you submit, and the admin email address for administration.',
+      heading2: 'How We Use Data',
+      content2: 'All stored information is used exclusively to display ticket status within the gupaicon application.',
+      heading3: 'No Ads & No Data Selling',
+      content3: 'We do not display ads, nor do we sell or share your personal data with any third parties.',
+      heading4: 'Contact & Data Deletion',
+      content4: 'You can contact us or request the deletion of your reports or account data by emailing wantawachjz@gmail.com.',
+    },
+    states: {
+      offlineTitle: 'You are offline',
+      offlineMessage: 'Please check your internet connection.',
+      errorTitle: 'Failed to load data',
+      errorMessage: 'Could not connect to Firestore database at this time.',
+      retry: 'Retry',
     },
     relativeTime: {
       justNow: 'updated just now',
