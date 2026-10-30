@@ -1,11 +1,11 @@
 export type EventStatus =
   | 'available'
   | 'low'
-  | 'soldout'
-  | 'notopen'
-  | 'cancelled'
   | 'sold_out'
-  | 'not_open';
+  | 'not_open'
+  | 'cancelled';
+
+export type CrowdReportStatus = 'available' | 'low' | 'sold_out';
 
 export interface ConcertEvent {
   id: string;
@@ -24,6 +24,11 @@ export interface ConcertEvent {
   statusSource: 'admin' | 'organizer';
   createdAt?: any;
   updatedAt?: any;
+}
+
+export interface CrowdReport {
+  status: CrowdReportStatus;
+  createdAt: any;
 }
 
 export type EventFormData = {

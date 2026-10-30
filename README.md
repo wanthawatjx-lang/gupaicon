@@ -1,7 +1,7 @@
 # กูไกูปคอน (gupaicon)
 
 เว็บแอปแผนที่และรายการคอนเสิร์ตอินดี้ / ไลฟ์เฮาส์ ในกรุงเทพฯ และรังสิต/ปทุมธานี (Bangkok & Rangsit Livehouse Map)
-พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์
+พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์ และระบบรายงานสถานะจากฝูงชน (Crowd-Reported Ticket Status)
 
 พัฒนาด้วย **React**, **TypeScript**, **Vite**, **Leaflet** (OpenStreetMap tiles with dark theme CSS filter) และ **Firebase** (Firestore + Google Authentication) รองรับแผนฟรี Spark Plan ไม่ต้องใช้ Cloud Functions หรือ Firebase Storage
 
@@ -12,26 +12,31 @@
 ### 1. แผนที่และหมุดร้านอัจฉริยะ (Interactive Map & Urgent Status Pins)
 - **พิกัดศูนย์กลาง**: กรุงเทพฯ (`13.80, 100.55`) พร้อมตีกรอบขอบเขตพื้นที่เฉพาะกรุงเทพฯ และรังสิต/ปทุมธานี (`13.40, 100.20` ถึง `14.30, 100.95`)
 - **สีของ Pin ตามความเร่งด่วนของงานที่กำลังจะมาถึง**:
-  - 🔴 **สีแดง (soldout)**: มีงานที่บัตรหมดแล้ว
-  - 🟡 **สีเหลือง (low)**: มีงานที่บัตรเหลือน้อย
-  - 🟢 **สีเขียว (available)**: ยังมีบัตร
-  - ⚪ **สีเทา (none / notopen / cancelled)**: ไม่มีงานที่กำลังจะมาถึง หรือยังไม่เปิดขาย / ยกเลิก
+  - 🔴 **สีแดง (`sold_out`)**: มีงานที่บัตรหมดแล้ว
+  - 🟡 **สีเหลือง (`low`)**: มีงานที่บัตรเหลือน้อย
+  - 🟢 **สีเขียว (`available`)**: ยังมีบัตร
+  - ⚪ **สีเทา (`not_open` / `cancelled`)**: ไม่มีงานที่กำลังจะมาถึง หรือยังไม่เปิดขาย / ยกเลิก
 - **ตัวเลขบนหมุด**: แสดงจำนวนงานที่กำลังจะมาถึงของร้านนั้น
 - **ระบบจัดกลุ่มหมุด (Marker Clustering)**: เมื่อซูมออก หมุดที่อยู่ใกล้กันจะรวมกลุ่มกันแสดงจำนวนรวม ป้องกันการทับซ้อน
-- **Accessibility & Contrast**: ทุกสถานะแสดงผลด้วย **สี + ไอคอนสัญลักษณ์ + ข้อความ** (✓ ยังมีบัตร · ◐ เหลือน้อย · ✕ บัตรหมด · ○ ยังไม่เปิดขาย · ⊘ ยกเลิก) ขนาด touch target ≥ 44px และ contrast ratio ≥ 4.5:1
+- **Accessibility & Contrast**: ทุกสถานะแสดงผลด้วย **สี + ไอคอนสัญลักษณ์ + ข้อความ** (`✓ ยังมีบัตร` · `◐ เหลือน้อย` · `✕ บัตรหมด` · `○ ยังไม่เปิดขาย` · `⊘ ยกเลิก`) ขนาด touch target ≥ 44px และ contrast ratio ≥ 4.5:1
 
 ### 2. หน้ารายละเอียดร้าน & งาน (Venue Sheet & Event Sheet)
 - **Venue Bottom Sheet (3 ระดับ)**: ปรับระดับได้ 3 สเต็ป (`peek` ~130px, `half` ~50vh, `full` ~88vh) พร้อม gesture ลากปรับระดับ
   - แสดงชื่อร้าน, ที่อยู่, ปุ่มเปิดใน Maps และ Instagram
   - แสดงรายการงานที่กำลังจะมาถึง เรียงตามวันเวลา (ซ่อนงานที่ผ่านไปแล้วอัตโนมัติ)
   - แต่ละแถวแสดง วันที่-เวลาในเขตเวลา `Asia/Bangkok`, ชื่อวง, badge สถานะ
-- **Event Detail Sheet**:
+- **Event Detail Sheet & Crowd Reporting**:
   - แสดงชื่อวง/งาน, ศิลปินทั้งหมด, แนวเพลง, ราคาบัตร
   - **ผู้จัดงาน (Promoter)**: แสดงชื่อพร้อมติ๊กถูกสีฟ้า (`✓`) กรณี verified พร้อมลิงก์ไปหน้า IG
-  - วันที่และเวลาแสดงในเขตเวลา `Asia/Bangkok` (เช่น "ศุกร์ 14 มี.ค. 2025 · 20:00 น.")
-  - Badge สถานะบัตรพร้อมเวลาอัปเดตล่าสุด ("อัปเดตล่าสุด X นาทีที่แล้ว")
-  - **ข้อความความจริงใจ (Sincerity Notice)**: *"สถานะบัตรมาจากผู้ใช้/แอดมิน อาจคลาดเคลื่อน เช็กกับหน้าขายบัตรอีกครั้ง"* พร้อมแท็ก "ยังไม่ยืนยัน"
-  - ปุ่ม **"ซื้อบัตร"** (`ticketUrl`) และ **"ดูโพสต์ IG"** (`igPostUrl`) เปิดแท็บใหม่ (ไม่ embed)
+  - วันและเวลาแสดงในเขตเวลา `Asia/Bangkok` (เช่น *"ศุกร์ 14 มี.ค. 2025 · 20:00 น."*)
+  - **ระบบรายงานสถานะจากผู้ใช้ (Crowd-Reported Status)**:
+    - ปุ่ม **"Sign in with Google"** สำหรับผู้ใช้งานทั่วไปเพื่อให้รายงานสถานะได้
+    - ส่วนรายงานสถานะบัตรประกอบด้วย 3 ปุ่มใหญ่ (min 44px): **Available / Low / Sold out** (`ยังมีบัตร / เหลือน้อย / บัตรหมด`)
+    - หลังรายงานแล้วแสดงข้อความ *"Thanks, you reported: X"* และให้เปลี่ยนสถานะได้
+  - **Displayed Status Logic**:
+    - หากแอดมินหรือผู้จัดตั้งสถานะ (`statusSource = "admin"` หรือ `"organizer"`) และใหม่กว่ารายงานล่าสุด แสดงสถานะแอดมินพร้อมเครื่องหมาย Verified
+    - มิฉะนั้น หากมีผู้ใช้เห็นพ้องต้องกันอย่างน้อย **3 คน** ภายใน **90 นาที** แสดงเป็นสถานะยืนยันพร้อม *"Confirmed by N people"* และเวลาอัปเดต
+    - หากน้อยกว่า 3 คน แสดงสถานะสีเทาเป็นกลาง *"Unconfirmed"* ไม่แสดงเป็นข้อเท็จจริง
 - **Direct Link Support**: รองรับ deep link เข้าผ่าน URL เช่น `#/event/{id}` เปิดหน้ารายละเอียดงานทันทีพร้อม pan แผนที่ไปยังร้าน
 
 ### 3. หน้ารายการงาน & ตัวกรอง (List View & Filter)
@@ -39,26 +44,17 @@
 - **แถบตัวกรอง (Filter Bar)**: เลื่อนแนวนอนได้ (Horizontal Scroll) ไม่ล้นจอ 390px
   - ตัวเลือกวัน: **ทั้งหมด** (All), **วันนี้** (Today), **สัปดาห์นี้** (This week), **เดือนนี้** (This month)
   - สวิตช์ toggle: **"เฉพาะที่ยังมีบัตร"** (กรองเอาเฉพาะ `available` และ `low`)
-  - ตัวกรองมีผลทั้งบนแผนที่ (สีหมุดและตัวเลขงานเปลี่ยนตามตัวกรอง) และในหน้ารายการ
+  - ตัวกรองมีผลทั้งบนแผนที่และในหน้ารายการ
 - **Empty State & Skeleton Loader**:
   - แสดง Skeleton loader สวยงามขณะโหลดข้อมูลจาก Firestore
   - เมื่อกรองแล้วไม่เจองาน แสดงข้อความ *"ยังไม่มีงานในช่วงนี้"* พร้อมปุ่ม *"ล้างตัวกรอง"*
 
 ### 4. แอดมินคอนโซล (`#/admin`)
-- **การรักษาความปลอดภัยสูงสุด**: จำกัดสิทธิ์เฉพาะอีเมล `wantawachjz@gmail.com` ที่ยืนยันอีเมลแล้วเท่านั้น (`email_verified == true`) ลบอีเมลอื่นทั้งหมด
-- **แท็บจัดการ 3 หมวด**:
-  - **งาน (Events)**: เพิ่ม/แก้ไข/ลบงาน, เลือกร้านจาก dropdown, เลือกผู้จัดจาก dropdown, เลือกวันเวลา Asia/Bangkok
-  - **เปลี่ยนสถานะด่วน (Quick Status)**: กดเปลี่ยนสถานะบัตรด้วยการแตะครั้งเดียว บันทึก `statusUpdatedAt` เป็น server timestamp ทันที
-  - **ร้าน (Venues)**: จัดการพิกัด, ที่อยู่, ลิงก์แผนที่, Instagram
-  - **ผู้จัด (Promoters)**: จัดการชื่อ, IG, สถานะ verified
-- **ปุ่ม Seed ข้อมูลตัวอย่าง (SAMPLE)**: กด 1 คลิก สร้าง 4-5 งานตัวอย่าง SAMPLE ผูกกับร้าน SAMPLE 3 ร้านเดิม
-
-### 5. สองภาษา (TH/EN) & ไทโปกราฟี
-- ปุ่มสลับภาษาบน Header (`TH | EN`) ค่าเริ่มต้นเป็น **TH** และบันทึกค่าไว้ใน `localStorage`
-- รวมข้อความ UI ทั้งหมดไว้ในไฟล์เดียว `src/i18n.ts`
-- ข้อมูลงาน/ร้าน/ผู้จัด แสดงผลตามที่กรอกจริง
-- ฟอนต์ Google Fonts **Noto Sans Thai** (น้ำหนัก 400, 500, 600, 700) พร้อม fallback `system-ui`
-- ปรับ `line-height` เป็น 1.6 สำหรับภาษาไทย ขนาดตัวอักษรไม่ต่ำกว่า 15px รองรับจอ iPhone 14 (390px) สมบูรณ์
+- **การรักษาความปลอดภัยสูงสุด**: จำกัดสิทธิ์เฉพาะอีเมล `wantawachjz@gmail.com` ที่ยืนยันอีเมลแล้วเท่านั้น (`email_verified == true`)
+- **แท็บจัดการ 3 หมวด (Events, Venues, Promoters)**:
+  - **Events Tab**: แสดงจำนวน crowd reports ในรอบ 90 นาทีของแต่ละงาน พร้อมปุ่ม **"Delete all reports"** สำหรับเคลียร์สแปม
+  - ฟอร์มสร้าง/แก้ไขงานมี dropdown เลือกร้านและผู้จัด, วันเวลา Asia/Bangkok
+  - ปุ่มเปลี่ยนสถานะด่วน (Quick Status) แบบ one-tap บันทึก `statusUpdatedAt` เป็น server timestamp ทันที
 
 ---
 
@@ -90,10 +86,14 @@
 - `ticketUrl`: string (optional, 0..500)
 - `igPostUrl`: string (optional, 0..500)
 - `posterUrl`: string (optional, 0..1000)
-- `status`: `"available"` | `"low"` | `"soldout"` | `"notopen"` | `"cancelled"`
+- `status`: `"available"` | `"low"` | `"sold_out"` | `"not_open"` | `"cancelled"`
 - `statusUpdatedAt`: timestamp
-- `statusSource`: `"admin"`
+- `statusSource`: `"admin"` | `"organizer"`
 - `createdAt`, `updatedAt`: timestamp
+
+### 4. `/events/{eventId}/reports/{uid}` (Crowd Reports)
+- `status`: `"available"` | `"low"` | `"sold_out"`
+- `createdAt`: server timestamp (document ID equals user's UID)
 
 ---
 
@@ -108,6 +108,10 @@ function isAdmin() {
 }
 ```
 - **Venues, Promoters, Events**: สาธารณะอ่านได้ (`read: true`), เฉพาะแอดมินเขียนได้ (`write: isAdmin()`)
+- **Reports (`/events/{eventId}/reports/{uid}`)**:
+  - `read`: สาธารณะ
+  - `create`, `update`: เฉพาะผู้ใช้ที่ล็อกอิน (`isSignedIn()`), `request.auth.uid == uid`, สถานะถูกต้อง (`available`, `low`, `sold_out`), และ `createdAt == request.time`
+  - `delete`: เฉพาะเจ้าของรายงาน (`request.auth.uid == uid`) หรือแอดมิน (`isAdmin()`)
 
 ---
 

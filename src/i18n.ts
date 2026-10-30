@@ -36,18 +36,15 @@ export interface TranslationDictionary {
   status: {
     available: string;
     low: string;
-    soldout: string;
-    notopen: string;
-    cancelled: string;
-    // aliases for backward compatibility
     sold_out: string;
     not_open: string;
+    cancelled: string;
   };
   statusSymbols: {
     available: string;
     low: string;
-    soldout: string;
-    notopen: string;
+    sold_out: string;
+    not_open: string;
     cancelled: string;
   };
   venueSheet: {
@@ -72,6 +69,10 @@ export interface TranslationDictionary {
     backToVenue: string;
     unconfirmedNotice: string;
     disclaimerText: string;
+    reportTitle: string;
+    signInToReport: string;
+    thanksReported: (statusText: string) => string;
+    changeReport: string;
   };
   relativeTime: {
     justNow: string;
@@ -96,6 +97,9 @@ export interface TranslationDictionary {
     seedSampleEvents: string;
     seedSuccess: string;
     quickStatus: string;
+    reportsCount: (n: number) => string;
+    deleteReports: string;
+    reportsDeleted: string;
   };
 }
 
@@ -130,17 +134,15 @@ export const translations: Record<Language, TranslationDictionary> = {
     status: {
       available: 'ยังมีบัตร',
       low: 'เหลือน้อย',
-      soldout: 'บัตรหมด',
-      notopen: 'ยังไม่เปิดขาย',
-      cancelled: 'ยกเลิก',
       sold_out: 'บัตรหมด',
       not_open: 'ยังไม่เปิดขาย',
+      cancelled: 'ยกเลิก',
     },
     statusSymbols: {
       available: '✓',
       low: '◐',
-      soldout: '✕',
-      notopen: '○',
+      sold_out: '✕',
+      not_open: '○',
       cancelled: '⊘',
     },
     venueSheet: {
@@ -165,6 +167,10 @@ export const translations: Record<Language, TranslationDictionary> = {
       backToVenue: 'กลับหน้าร้าน',
       unconfirmedNotice: 'ยังไม่ยืนยัน',
       disclaimerText: 'สถานะบัตรมาจากผู้ใช้/แอดมิน อาจคลาดเคลื่อน เช็กกับหน้าขายบัตรอีกครั้ง',
+      reportTitle: 'รายงานสถานะบัตร (Crowd Reports)',
+      signInToReport: 'ลงชื่อเข้าใช้เพื่อรายงานสถานะ',
+      thanksReported: (st) => `ขอบคุณที่คุณรายงานสถานะ: ${st}`,
+      changeReport: 'เปลี่ยนสถานะที่รายงาน',
     },
     relativeTime: {
       justNow: 'เมื่อสักครู่',
@@ -189,6 +195,9 @@ export const translations: Record<Language, TranslationDictionary> = {
       seedSampleEvents: 'Seed ข้อมูลตัวอย่าง (SAMPLE)',
       seedSuccess: 'สร้างข้อมูลตัวอย่าง SAMPLE สำเร็จแล้ว',
       quickStatus: 'เปลี่ยนสถานะด่วน',
+      reportsCount: (n) => `${n} รายงานใน 90 นาที`,
+      deleteReports: 'ลบรายงานทั้งหมด (Spam Cleanup)',
+      reportsDeleted: 'ลบรายงานทั้งหมดสำเร็จแล้ว',
     },
   },
   en: {
@@ -221,17 +230,15 @@ export const translations: Record<Language, TranslationDictionary> = {
     status: {
       available: 'Available',
       low: 'Low',
-      soldout: 'Sold out',
-      notopen: 'Not open',
-      cancelled: 'Cancelled',
       sold_out: 'Sold out',
       not_open: 'Not open',
+      cancelled: 'Cancelled',
     },
     statusSymbols: {
       available: '✓',
       low: '◐',
-      soldout: '✕',
-      notopen: '○',
+      sold_out: '✕',
+      not_open: '○',
       cancelled: '⊘',
     },
     venueSheet: {
@@ -256,6 +263,10 @@ export const translations: Record<Language, TranslationDictionary> = {
       backToVenue: 'Back to venue',
       unconfirmedNotice: 'Unconfirmed',
       disclaimerText: 'Ticket status comes from users/admins and may differ. Please check official ticketing page.',
+      reportTitle: 'Report Ticket Status',
+      signInToReport: 'Sign in to report',
+      thanksReported: (st) => `Thanks, you reported: ${st}`,
+      changeReport: 'Change report',
     },
     relativeTime: {
       justNow: 'updated just now',
@@ -280,6 +291,9 @@ export const translations: Record<Language, TranslationDictionary> = {
       seedSampleEvents: 'Seed Sample Shows (SAMPLE)',
       seedSuccess: 'Sample shows successfully created',
       quickStatus: 'Quick Status Change',
+      reportsCount: (n) => `${n} reports in 90m`,
+      deleteReports: 'Delete all reports',
+      reportsDeleted: 'All crowd reports deleted successfully',
     },
   },
 };
@@ -293,7 +307,6 @@ export function getInitialLanguage(): Language {
   } catch {
     // fallback
   }
-  // Default language is 'th'
   return 'th';
 }
 

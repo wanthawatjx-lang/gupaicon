@@ -67,7 +67,7 @@
     "ticketUrl": "https://ticketmelon.com",
     "igPostUrl": "https://instagram.com",
     "posterUrl": "",
-    "status": "soldout",
+    "status": "sold_out",
     "statusUpdatedAt": "2026-10-30T09:00:00+07:00",
     "statusSource": "admin"
   },
@@ -90,7 +90,7 @@
     "ticketUrl": "https://ticketmelon.com",
     "igPostUrl": "https://instagram.com",
     "posterUrl": "",
-    "status": "notopen",
+    "status": "not_open",
     "statusUpdatedAt": "2026-10-30T08:00:00+07:00",
     "statusSource": "admin"
   },

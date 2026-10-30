@@ -29,6 +29,7 @@ import {
   Music2,
   Users,
 } from 'lucide-react';
+import { EventReportsBadge } from './admin/EventReportsBadge';
 
 interface AdminPanelProps {
   user: User | null;
@@ -829,8 +830,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           >
                             <option value="available">✓ Available (ยังมีบัตร)</option>
                             <option value="low">◐ Low (เหลือน้อย)</option>
-                            <option value="soldout">✕ Sold out (บัตรหมด)</option>
-                            <option value="notopen">○ Not open yet (ยังไม่เปิดขาย)</option>
+                            <option value="sold_out">✕ Sold out (บัตรหมด)</option>
+                            <option value="not_open">○ Not open yet (ยังไม่เปิดขาย)</option>
                             <option value="cancelled">⊘ Cancelled (ยกเลิก)</option>
                           </select>
                         </div>
@@ -965,15 +966,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   [
                                     { key: 'available', label: '✓ ยังมีบัตร' },
                                     { key: 'low', label: '◐ เหลือน้อย' },
-                                    { key: 'soldout', label: '✕ บัตรหมด' },
-                                    { key: 'notopen', label: '○ ยังไม่เปิด' },
+                                    { key: 'sold_out', label: '✕ บัตรหมด' },
+                                    { key: 'not_open', label: '○ ยังไม่เปิด' },
                                     { key: 'cancelled', label: '⊘ ยกเลิก' },
                                   ] as { key: EventStatus; label: string }[]
                                 ).map(({ key: st, label }) => {
-                                  const isCurrent =
-                                    ev.status === st ||
-                                    (st === 'soldout' && ev.status === 'sold_out') ||
-                                    (st === 'notopen' && ev.status === 'not_open');
+                                  const isCurrent = ev.status === st;
                                   return (
                                     <button
                                       key={st}
@@ -992,6 +990,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 })}
                               </div>
                             </div>
+
+                            {/* Crowd reports count and spam cleanup button (Requirement 7) */}
+                            <EventReportsBadge eventId={ev.id} />
                           </div>
                         );
                       })}

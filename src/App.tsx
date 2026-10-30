@@ -323,6 +323,7 @@ export default function App() {
         event={selectedEvent}
         promoter={selectedEventPromoter}
         venueName={selectedEventVenueName}
+        user={user}
         onClose={() => {
           setSelectedEvent(null);
           if (window.location.hash.startsWith('#/event/')) {

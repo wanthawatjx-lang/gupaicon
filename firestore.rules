@@ -27,7 +27,11 @@ service cloud.firestore {
     }
 
     function isValidStatus(status) {
-      return status in ['available', 'low', 'soldout', 'notopen', 'cancelled', 'sold_out', 'not_open'];
+      return status in ['available', 'low', 'sold_out', 'not_open', 'cancelled'];
+    }
+
+    function isValidReportStatus(status) {
+      return status in ['available', 'low', 'sold_out'];
     }
 
     function isValidVenue(data) {
@@ -76,7 +80,7 @@ service cloud.firestore {
         && (!('posterUrl' in data) || (data.posterUrl is string && data.posterUrl.size() <= 1000))
         && data.status is string && isValidStatus(data.status)
         && data.statusUpdatedAt is timestamp
-        && (data.statusSource in ['admin'])
+        && (data.statusSource in ['admin', 'organizer'])
         && (!('createdAt' in data) || data.createdAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
@@ -103,6 +107,19 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
       allow update: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
       allow delete: if isAdmin() && isValidId(eventId);
+
+      // 4. Crowd Reports Subcollection: events/{eventId}/reports/{uid} (Requirement 2 & 6)
+      match /reports/{uid} {
+        allow read: if true;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == uid
+          && incoming().keys().hasAll(['status', 'createdAt'])
+          && incoming().keys().hasOnly(['status', 'createdAt'])
+          && incoming().status is string
+          && isValidReportStatus(incoming().status)
+          && incoming().createdAt == request.time;
+        allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      }
     }
   }
 }

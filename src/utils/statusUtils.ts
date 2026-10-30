@@ -13,17 +13,17 @@ export interface StatusConfig {
   pinColor: string;
 }
 
-export function normalizeStatus(status: string | undefined): 'available' | 'low' | 'soldout' | 'notopen' | 'cancelled' {
-  if (!status) return 'notopen';
-  if (status === 'sold_out' || status === 'soldout') return 'soldout';
-  if (status === 'not_open' || status === 'notopen') return 'notopen';
+export function normalizeStatus(status: string | undefined): 'available' | 'low' | 'sold_out' | 'not_open' | 'cancelled' {
+  if (!status) return 'not_open';
+  if (status === 'soldout' || status === 'sold_out') return 'sold_out';
+  if (status === 'notopen' || status === 'not_open') return 'not_open';
   if (status === 'available') return 'available';
   if (status === 'low') return 'low';
   if (status === 'cancelled') return 'cancelled';
-  return 'notopen';
+  return 'not_open';
 }
 
-const BASE_MAP: Record<'available' | 'low' | 'soldout' | 'notopen' | 'cancelled', StatusConfig> = {
+export const STATUS_MAP: Record<'available' | 'low' | 'sold_out' | 'not_open' | 'cancelled', StatusConfig> = {
   available: {
     label: 'Available',
     labelTh: 'ยังมีบัตร',
@@ -44,7 +44,7 @@ const BASE_MAP: Record<'available' | 'low' | 'soldout' | 'notopen' | 'cancelled'
     textColor: 'text-amber-400',
     pinColor: '#eab308',
   },
-  soldout: {
+  sold_out: {
     label: 'Sold out',
     labelTh: 'บัตรหมด',
     labelEn: 'Sold out',
@@ -54,7 +54,7 @@ const BASE_MAP: Record<'available' | 'low' | 'soldout' | 'notopen' | 'cancelled'
     textColor: 'text-rose-400',
     pinColor: '#ef4444',
   },
-  notopen: {
+  not_open: {
     label: 'Not open',
     labelTh: 'ยังไม่เปิดขาย',
     labelEn: 'Not open',
@@ -76,12 +76,6 @@ const BASE_MAP: Record<'available' | 'low' | 'soldout' | 'notopen' | 'cancelled'
   },
 };
 
-export const STATUS_MAP: Record<string, StatusConfig> = {
-  ...BASE_MAP,
-  sold_out: BASE_MAP.soldout,
-  not_open: BASE_MAP.notopen,
-};
-
 export function getStatusLabel(status: EventStatus | string, lang: Language): string {
   const norm = normalizeStatus(status);
   return lang === 'th' ? STATUS_MAP[norm].labelTh : STATUS_MAP[norm].labelEn;
@@ -101,7 +95,7 @@ export function getStatusConfig(status: EventStatus | string): StatusConfig {
  * Calculates the most urgent status for a venue's upcoming events
  */
 export function getVenueUrgentStatus(events: ConcertEvent[]): {
-  status: 'available' | 'low' | 'soldout' | 'notopen' | 'cancelled' | 'none';
+  status: EventStatus | 'none';
   color: string;
   upcomingCount: number;
   symbol: string;
@@ -117,10 +111,10 @@ export function getVenueUrgentStatus(events: ConcertEvent[]): {
     };
   }
 
-  // Priority 1: soldout (แดง)
-  if (upcoming.some((e) => normalizeStatus(e.status) === 'soldout')) {
+  // Priority 1: sold_out (แดง)
+  if (upcoming.some((e) => normalizeStatus(e.status) === 'sold_out')) {
     return {
-      status: 'soldout',
+      status: 'sold_out',
       color: '#ef4444',
       upcomingCount: upcoming.length,
       symbol: '✕',
@@ -147,7 +141,7 @@ export function getVenueUrgentStatus(events: ConcertEvent[]): {
     };
   }
 
-  // Priority 4: grey for notopen or cancelled
+  // Priority 4: grey for not_open or cancelled
   const firstNorm = normalizeStatus(upcoming[0].status);
   return {
     status: firstNorm,

@@ -166,9 +166,6 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
                     SAMPLE
                   </span>
                 )}
-                <span className="text-xs text-neutral-400 font-mono">
-                  {venueEvents.length} {lang === 'th' ? 'งาน' : 'shows'}
-                </span>
               </div>
               <h2
                 id="sheet-venue-title"
