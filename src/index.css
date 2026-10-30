@@ -32,6 +32,11 @@
   outline: none;
 }
 
+/* Apply dark mode filter ONLY to map tiles, not to markers or UI */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6);
+}
+
 /* Ensure attribution has great contrast and indie music style */
 .leaflet-control-attribution {
   background: rgba(10, 10, 10, 0.85) !important;

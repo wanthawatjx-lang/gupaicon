@@ -4,6 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
 import { getVenueUrgentStatus, getStatusLabel, getStatusSymbol } from '../utils/statusUtils';
+import { MAP_CONFIG } from '../constants/mapConfig';
 import { Language } from '../i18n';
 
 // Bangkok & Pathum Thani boundary coordinates
@@ -53,12 +54,10 @@ export const Map: React.FC<MapProps> = ({
     // Add Zoom Control to top-right
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    // CartoDB Dark Matter tiles powered by OpenStreetMap
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19,
+    // Standard OpenStreetMap tiles with dark mode CSS filter on leaflet-tile-pane
+    L.tileLayer(MAP_CONFIG.TILE_URL, {
+      attribution: MAP_CONFIG.ATTRIBUTION,
+      maxZoom: MAP_CONFIG.MAX_ZOOM,
     }).addTo(map);
 
     // Create a LayerGroup for markers

@@ -3,7 +3,7 @@
 เว็บแอปแผนที่และรายการคอนเสิร์ตอินดี้ / ไลฟ์เฮาส์ ในกรุงเทพฯ และรังสิต/ปทุมธานี (Bangkok & Rangsit Livehouse Map)
 พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์
 
-พัฒนาด้วย **React**, **TypeScript**, **Vite**, **Leaflet** (CartoDB Dark Matter / OpenStreetMap tiles) และ **Firebase** (Firestore + Google Authentication) รองรับแผนฟรี Spark Plan ไม่ต้องใช้ Cloud Functions หรือ Firebase Storage
+พัฒนาด้วย **React**, **TypeScript**, **Vite**, **Leaflet** (OpenStreetMap tiles with dark theme CSS filter) และ **Firebase** (Firestore + Google Authentication) รองรับแผนฟรี Spark Plan ไม่ต้องใช้ Cloud Functions หรือ Firebase Storage
 
 ---
 
