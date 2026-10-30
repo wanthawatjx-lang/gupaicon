@@ -1,75 +1,68 @@
-# gupaicon (กู้ภัยคอน)
+# กูไกูปคอน (gupaicon)
 
-A mobile-first web app map of indie / livehouse concerts and venues in Bangkok and Rangsit/Pathum Thani, Thailand.
+เว็บแอปแผนที่และรายการคอนเสิร์ตอินดี้ / ไลฟ์เฮาส์ ในกรุงเทพฯ และรังสิต/ปทุมธานี (Bangkok & Rangsit Livehouse Map)
+พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์
 
-Built with **React**, **TypeScript**, **Vite**, **Leaflet** with OpenStreetMap tiles, and **Firebase** (Firestore + Google Authentication). Free-tier friendly (Spark Plan, no Cloud Functions, no Firebase Storage). Bilingual UI: Thai & English (Admin console in English).
-
----
-
-## Features
-
-### 1. Full-Screen Interactive Map
-- Centered on Bangkok (`13.80, 100.55`), zoom `11`.
-- Restricted boundaries strictly enclosing Bangkok and Rangsit / Pathum Thani (`13.40, 100.20` to `14.30, 100.95`).
-- Dark, minimal music-poster theme with CartoDB Dark Matter tiles powered by OpenStreetMap data.
-- Visible attribution: `"© OpenStreetMap contributors © CARTO"`.
-- Custom neon vinyl pins optimized for 390px mobile screens with 44px+ touch targets.
-- **Dynamic Urgency Pin Coloring**:
-  - 🟢 **Green** (`#22c55e`): Tickets available for upcoming show(s).
-  - 🟡 **Yellow** (`#eab308`): Tickets running low (`low`).
-  - 🔴 **Red** (`#ef4444`): Sold out shows.
-  - ⚪ **Grey** (`#52525b`): Venue has no upcoming shows or not open / cancelled.
-
-### 2. Bilingual Experience (Thai & English)
-- **Language Switcher**: `TH | EN` toggle button in header with active highlight.
-- **Auto-Detection**: Defaults to Thai if `navigator.language` starts with `th`, otherwise English.
-- **Persistent Choice**: Saved in `localStorage` under `gupaicon_lang`.
-- **Typography**: Google Fonts **Prompt** and **Noto Sans Thai** for crisp Thai typography.
-- **Status Labels in Thai**:
-  - Available = `"ยังมีบัตร"`
-  - Low = `"เหลือน้อย"`
-  - Sold out = `"บัตรหมด"`
-  - Not open = `"ยังไม่เปิดขาย"`
-  - Cancelled = `"ยกเลิก"`
-- **Localized Dates**: All concert dates formatted in `Asia/Bangkok` timezone (`UTC+7`).
-- Entity names (venues, events, artists) remain untouched as entered by admins.
-- Admin console remains in English.
-
-### 3. Date & Ticket Availability Filter Bar
-- Quick segmented filter buttons: **All** (`ทั้งหมด`), **Today** (`วันนี้`), **This week** (`สัปดาห์นี้`), **This month** (`เดือนนี้`).
-- Toggle switch: **Tickets available only** (`เฉพาะที่มีบัตร`).
-- Map pin colors and counts react in real-time to active filters.
-
-### 4. Venue Bottom Sheet
-- Tapping any venue pin slides up a tactile music-poster bottom sheet.
-- Direct links: **"Open in Maps"** (`mapsUrl`) and **"Instagram"** (`igUrl`).
-- **Upcoming Concerts List**: Shows upcoming events hosted at the venue, sorted chronologically with past shows filtered out.
-  - Date & time in `Asia/Bangkok` timezone.
-  - Status badges: Green (Available / ยังมีบัตร), Yellow (Low / เหลือน้อย), Red (Sold out / บัตรหมด), Grey (Not open / Cancelled).
-  - Relative update label: `"updated X min ago"` / `"อัปเดต X นาทีที่แล้ว"`.
-
-### 5. Event Detail Sheet
-- Tapping any concert event row opens full event details:
-  - Event title, lineup / artists tags, and genres.
-  - **Promoter / Collective**: with verified checkmark (`✓`) linking directly to their Instagram profile.
-  - Date & Time in `Asia/Bangkok` timezone.
-  - Ticket price description (`priceText`).
-  - Live status badge with relative update timestamp.
-  - **"Buy tickets"** button (`ticketUrl`, opens in new tab).
-  - **"View IG post"** button (`igPostUrl`, opens in new tab as standard link, no embeds).
-
-### 6. Admin Console (`/admin` and `#/admin`)
-- Accessible via the top bar shield button or direct `/admin` URL.
-- **Google Sign-In**: Admin access strictly restricted to `wantawachjz@gmail.com` with `email_verified == true`.
-- **Management Tabs**:
-  - **Events**: Create, edit, delete, and one-tap status updates. Venue and promoter fields are dropdown selectors.
-  - **Venues**: Add, edit, and delete venues with coordinates, address, Maps link, and Instagram URL.
-  - **Promoters**: Add, edit, and delete promoters (with verified toggle).
-- **1-Click Seed Button**: Seeds sample venues, promoters, and events.
+พัฒนาด้วย **React**, **TypeScript**, **Vite**, **Leaflet** (CartoDB Dark Matter / OpenStreetMap tiles) และ **Firebase** (Firestore + Google Authentication) รองรับแผนฟรี Spark Plan ไม่ต้องใช้ Cloud Functions หรือ Firebase Storage
 
 ---
 
-## Firestore Schema & Collections
+## ฟีเจอร์หลัก (Features)
+
+### 1. แผนที่และหมุดร้านอัจฉริยะ (Interactive Map & Urgent Status Pins)
+- **พิกัดศูนย์กลาง**: กรุงเทพฯ (`13.80, 100.55`) พร้อมตีกรอบขอบเขตพื้นที่เฉพาะกรุงเทพฯ และรังสิต/ปทุมธานี (`13.40, 100.20` ถึง `14.30, 100.95`)
+- **สีของ Pin ตามความเร่งด่วนของงานที่กำลังจะมาถึง**:
+  - 🔴 **สีแดง (soldout)**: มีงานที่บัตรหมดแล้ว
+  - 🟡 **สีเหลือง (low)**: มีงานที่บัตรเหลือน้อย
+  - 🟢 **สีเขียว (available)**: ยังมีบัตร
+  - ⚪ **สีเทา (none / notopen / cancelled)**: ไม่มีงานที่กำลังจะมาถึง หรือยังไม่เปิดขาย / ยกเลิก
+- **ตัวเลขบนหมุด**: แสดงจำนวนงานที่กำลังจะมาถึงของร้านนั้น
+- **ระบบจัดกลุ่มหมุด (Marker Clustering)**: เมื่อซูมออก หมุดที่อยู่ใกล้กันจะรวมกลุ่มกันแสดงจำนวนรวม ป้องกันการทับซ้อน
+- **Accessibility & Contrast**: ทุกสถานะแสดงผลด้วย **สี + ไอคอนสัญลักษณ์ + ข้อความ** (✓ ยังมีบัตร · ◐ เหลือน้อย · ✕ บัตรหมด · ○ ยังไม่เปิดขาย · ⊘ ยกเลิก) ขนาด touch target ≥ 44px และ contrast ratio ≥ 4.5:1
+
+### 2. หน้ารายละเอียดร้าน & งาน (Venue Sheet & Event Sheet)
+- **Venue Bottom Sheet (3 ระดับ)**: ปรับระดับได้ 3 สเต็ป (`peek` ~130px, `half` ~50vh, `full` ~88vh) พร้อม gesture ลากปรับระดับ
+  - แสดงชื่อร้าน, ที่อยู่, ปุ่มเปิดใน Maps และ Instagram
+  - แสดงรายการงานที่กำลังจะมาถึง เรียงตามวันเวลา (ซ่อนงานที่ผ่านไปแล้วอัตโนมัติ)
+  - แต่ละแถวแสดง วันที่-เวลาในเขตเวลา `Asia/Bangkok`, ชื่อวง, badge สถานะ
+- **Event Detail Sheet**:
+  - แสดงชื่อวง/งาน, ศิลปินทั้งหมด, แนวเพลง, ราคาบัตร
+  - **ผู้จัดงาน (Promoter)**: แสดงชื่อพร้อมติ๊กถูกสีฟ้า (`✓`) กรณี verified พร้อมลิงก์ไปหน้า IG
+  - วันที่และเวลาแสดงในเขตเวลา `Asia/Bangkok` (เช่น "ศุกร์ 14 มี.ค. 2025 · 20:00 น.")
+  - Badge สถานะบัตรพร้อมเวลาอัปเดตล่าสุด ("อัปเดตล่าสุด X นาทีที่แล้ว")
+  - **ข้อความความจริงใจ (Sincerity Notice)**: *"สถานะบัตรมาจากผู้ใช้/แอดมิน อาจคลาดเคลื่อน เช็กกับหน้าขายบัตรอีกครั้ง"* พร้อมแท็ก "ยังไม่ยืนยัน"
+  - ปุ่ม **"ซื้อบัตร"** (`ticketUrl`) และ **"ดูโพสต์ IG"** (`igPostUrl`) เปิดแท็บใหม่ (ไม่ embed)
+- **Direct Link Support**: รองรับ deep link เข้าผ่าน URL เช่น `#/event/{id}` เปิดหน้ารายละเอียดงานทันทีพร้อม pan แผนที่ไปยังร้าน
+
+### 3. หน้ารายการงาน & ตัวกรอง (List View & Filter)
+- **สลับโหมดแผนที่และรายการ**: สลับได้สะดวกรวดเร็วด้วยปุ่มลอย (Floating Switch Button) ที่ด้านล่าง
+- **แถบตัวกรอง (Filter Bar)**: เลื่อนแนวนอนได้ (Horizontal Scroll) ไม่ล้นจอ 390px
+  - ตัวเลือกวัน: **ทั้งหมด** (All), **วันนี้** (Today), **สัปดาห์นี้** (This week), **เดือนนี้** (This month)
+  - สวิตช์ toggle: **"เฉพาะที่ยังมีบัตร"** (กรองเอาเฉพาะ `available` และ `low`)
+  - ตัวกรองมีผลทั้งบนแผนที่ (สีหมุดและตัวเลขงานเปลี่ยนตามตัวกรอง) และในหน้ารายการ
+- **Empty State & Skeleton Loader**:
+  - แสดง Skeleton loader สวยงามขณะโหลดข้อมูลจาก Firestore
+  - เมื่อกรองแล้วไม่เจองาน แสดงข้อความ *"ยังไม่มีงานในช่วงนี้"* พร้อมปุ่ม *"ล้างตัวกรอง"*
+
+### 4. แอดมินคอนโซล (`#/admin`)
+- **การรักษาความปลอดภัยสูงสุด**: จำกัดสิทธิ์เฉพาะอีเมล `wantawachjz@gmail.com` ที่ยืนยันอีเมลแล้วเท่านั้น (`email_verified == true`) ลบอีเมลอื่นทั้งหมด
+- **แท็บจัดการ 3 หมวด**:
+  - **งาน (Events)**: เพิ่ม/แก้ไข/ลบงาน, เลือกร้านจาก dropdown, เลือกผู้จัดจาก dropdown, เลือกวันเวลา Asia/Bangkok
+  - **เปลี่ยนสถานะด่วน (Quick Status)**: กดเปลี่ยนสถานะบัตรด้วยการแตะครั้งเดียว บันทึก `statusUpdatedAt` เป็น server timestamp ทันที
+  - **ร้าน (Venues)**: จัดการพิกัด, ที่อยู่, ลิงก์แผนที่, Instagram
+  - **ผู้จัด (Promoters)**: จัดการชื่อ, IG, สถานะ verified
+- **ปุ่ม Seed ข้อมูลตัวอย่าง (SAMPLE)**: กด 1 คลิก สร้าง 4-5 งานตัวอย่าง SAMPLE ผูกกับร้าน SAMPLE 3 ร้านเดิม
+
+### 5. สองภาษา (TH/EN) & ไทโปกราฟี
+- ปุ่มสลับภาษาบน Header (`TH | EN`) ค่าเริ่มต้นเป็น **TH** และบันทึกค่าไว้ใน `localStorage`
+- รวมข้อความ UI ทั้งหมดไว้ในไฟล์เดียว `src/i18n.ts`
+- ข้อมูลงาน/ร้าน/ผู้จัด แสดงผลตามที่กรอกจริง
+- ฟอนต์ Google Fonts **Noto Sans Thai** (น้ำหนัก 400, 500, 600, 700) พร้อม fallback `system-ui`
+- ปรับ `line-height` เป็น 1.6 สำหรับภาษาไทย ขนาดตัวอักษรไม่ต่ำกว่า 15px รองรับจอ iPhone 14 (390px) สมบูรณ์
+
+---
+
+## โครงสร้างข้อมูล Firestore (Data Model)
 
 ### 1. `/venues/{venueId}`
 - `name`: string (2..100)
@@ -81,61 +74,53 @@ Built with **React**, **TypeScript**, **Vite**, **Leaflet** with OpenStreetMap t
 - `createdAt`, `updatedAt`: timestamp
 
 ### 2. `/promoters/{promoterId}`
-- `name`: string (2..100)
-- `igUrl`: string (0..300)
-- `verified`: boolean
+- `name`: string (1..80)
+- `igUrl`: string (optional, 0..300)
+- `verified`: boolean (default: false)
 - `createdAt`, `updatedAt`: timestamp
 
 ### 3. `/events/{eventId}`
-- `title`: string (2..150)
-- `artists`: array of strings
+- `title`: string (1..120)
+- `artists`: array of string (1..20)
 - `venueId`: string (references `/venues/{venueId}`)
-- `promoterId`: string (references `/promoters/{promoterId}`)
+- `promoterId`: string (optional, references `/promoters/{promoterId}`)
 - `startAt`: timestamp
-- `priceText`: string (0..80)
-- `genres`: array of strings
-- `ticketUrl`: string (0..500)
-- `igPostUrl`: string (0..500)
+- `priceText`: string (0..60)
+- `genres`: array of string (0..8)
+- `ticketUrl`: string (optional, 0..500)
+- `igPostUrl`: string (optional, 0..500)
 - `posterUrl`: string (optional, 0..1000)
-- `status`: `"not_open"` | `"available"` | `"low"` | `"sold_out"` | `"cancelled"`
+- `status`: `"available"` | `"low"` | `"soldout"` | `"notopen"` | `"cancelled"`
 - `statusUpdatedAt`: timestamp
 - `statusSource`: `"admin"`
 - `createdAt`, `updatedAt`: timestamp
 
 ---
 
-## Firestore Security Rules
+## การตั้งค่ากฎความปลอดภัย (Firestore Rules)
 
-Deployed in `firestore.rules`:
-- **Venues**:
-  - `read`: Public.
-  - `write`: Admin only (`wantawachjz@gmail.com` with `email_verified == true`).
-- **Promoters**:
-  - `read`: Public.
-  - `write`: Admin only (`wantawachjz@gmail.com` with `email_verified == true`).
-- **Events**:
-  - `read`: Public.
-  - `write`: Admin only (`wantawachjz@gmail.com` with `email_verified == true`).
-
----
-
-## Free-Tier Spark Quota Optimization
-- Realtime queries order by `startAt` and are strictly bounded with `limit(80)`.
-- Past events are filtered out client-side to minimize document reads.
-- Zero Cloud Functions or Firebase Storage dependencies.
+กฎถูกคอมไพล์และอัปเดตไว้ใน `firestore.rules`:
+```javascript
+function isAdmin() {
+  return isSignedIn()
+    && request.auth.token.email_verified == true
+    && request.auth.token.email == 'wantawachjz@gmail.com';
+}
+```
+- **Venues, Promoters, Events**: สาธารณะอ่านได้ (`read: true`), เฉพาะแอดมินเขียนได้ (`write: isAdmin()`)
 
 ---
 
-## How to Run Locally
+## การรันโปรเจกต์ในเครื่อง
 
 ```bash
-# 1. Install dependencies
+# ติดตั้ง dependencies
 npm install
 
-# 2. Start dev server
+# รันโหมด dev
 npm run dev
 
-# 3. Build for production
+# บิลด์สำหรับ production
 npm run build
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+เข้าชมผ่านเบราว์เซอร์ที่ [http://localhost:3000](http://localhost:3000)

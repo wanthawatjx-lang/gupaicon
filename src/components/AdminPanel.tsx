@@ -109,6 +109,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Submitting / Seeding loading states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSeedingAll, setIsSeedingAll] = useState(false);
+  const [isSeedingEvents, setIsSeedingEvents] = useState(false);
 
   const isAdmin = user ? isUserAdmin(user.email, user.emailVerified) : false;
 
@@ -151,6 +152,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setErrorMessage(err?.message || 'Failed to seed sample data. Verify admin permissions.');
     } finally {
       setIsSeedingAll(false);
+    }
+  };
+
+  // --- Seed Only Events (SAMPLE) ---
+  const handleSeedEventsOnly = async () => {
+    setIsSeedingEvents(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const eventsCount = await seedSampleEvents();
+      setSuccessMessage(`Seeded ${eventsCount} sample events (SAMPLE) successfully!`);
+    } catch (err: any) {
+      console.error('Seed events error:', err);
+      setErrorMessage(err?.message || 'Failed to seed sample events. Verify admin permissions.');
+    } finally {
+      setIsSeedingEvents(false);
     }
   };
 
@@ -554,17 +571,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {activeTab === 'events' && (
                 <div className="space-y-4">
                   {/* Actions Header */}
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={handleOpenAddEvent}
-                      className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-bold text-xs hover:bg-lime-300 transition-all cursor-pointer shadow-md"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>New Event</span>
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleOpenAddEvent}
+                        className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-lime-400 text-black font-bold text-xs hover:bg-lime-300 transition-all cursor-pointer shadow-md"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>New Event</span>
+                      </button>
 
-                    <div className="relative w-full max-w-xs">
+                      <button
+                        type="button"
+                        onClick={handleSeedEventsOnly}
+                        disabled={isSeedingEvents}
+                        className="flex items-center gap-1.5 py-2.5 px-3 rounded-xl bg-neutral-900 text-lime-400 border border-lime-400/40 font-bold text-xs hover:bg-neutral-800 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                        title="Seed 4-5 sample events (SAMPLE)"
+                      >
+                        {isSeedingEvents ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Database className="w-3.5 h-3.5" />
+                        )}
+                        <span>Seed ข้อมูลตัวอย่าง (SAMPLE)</span>
+                      </button>
+                    </div>
+
+                    <div className="relative w-full sm:w-auto sm:min-w-[200px]">
                       <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                       <input
                         type="text"
@@ -793,11 +827,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             }
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400"
                           >
-                            <option value="available">Available (Tickets on sale)</option>
-                            <option value="low">Low (Tickets running out)</option>
-                            <option value="sold_out">Sold out</option>
-                            <option value="not_open">Not open yet</option>
-                            <option value="cancelled">Cancelled</option>
+                            <option value="available">✓ Available (ยังมีบัตร)</option>
+                            <option value="low">◐ Low (เหลือน้อย)</option>
+                            <option value="soldout">✕ Sold out (บัตรหมด)</option>
+                            <option value="notopen">○ Not open yet (ยังไม่เปิดขาย)</option>
+                            <option value="cancelled">⊘ Cancelled (ยกเลิก)</option>
                           </select>
                         </div>
 
@@ -929,14 +963,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 {(
                                   [
-                                    'available',
-                                    'low',
-                                    'sold_out',
-                                    'not_open',
-                                    'cancelled',
-                                  ] as EventStatus[]
-                                ).map((st) => {
-                                  const isCurrent = ev.status === st;
+                                    { key: 'available', label: '✓ ยังมีบัตร' },
+                                    { key: 'low', label: '◐ เหลือน้อย' },
+                                    { key: 'soldout', label: '✕ บัตรหมด' },
+                                    { key: 'notopen', label: '○ ยังไม่เปิด' },
+                                    { key: 'cancelled', label: '⊘ ยกเลิก' },
+                                  ] as { key: EventStatus; label: string }[]
+                                ).map(({ key: st, label }) => {
+                                  const isCurrent =
+                                    ev.status === st ||
+                                    (st === 'soldout' && ev.status === 'sold_out') ||
+                                    (st === 'notopen' && ev.status === 'not_open');
                                   return (
                                     <button
                                       key={st}
@@ -949,7 +986,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                           : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
                                       }`}
                                     >
-                                      {STATUS_MAP[st].label}
+                                      {label}
                                     </button>
                                   );
                                 })}

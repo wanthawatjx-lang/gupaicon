@@ -215,6 +215,9 @@ export function computeDisplayedStatus(
   // Rule 4: Fewer than 3 users agree -> Show "Unconfirmed" with neutral badge
   const unconfirmedConfig: StatusConfig = {
     label: 'Unconfirmed',
+    labelTh: 'ยังไม่ยืนยัน',
+    labelEn: 'Unconfirmed',
+    symbol: '?',
     badgeClass: 'bg-neutral-800 text-neutral-300 border-neutral-700',
     dotClass: 'bg-neutral-400',
     textColor: 'text-neutral-300',

@@ -70,13 +70,16 @@ export async function createPromoter(data: PromoterFormData, customId?: string):
   const path = `${COLLECTION_NAME}/${docId}`;
 
   try {
-    await setDoc(docRef, {
-      name: data.name.trim(),
-      igUrl: data.igUrl.trim(),
+    const payload: Record<string, any> = {
+      name: data.name.trim().slice(0, 80),
       verified: Boolean(data.verified),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    });
+    };
+    if (data.igUrl && data.igUrl.trim()) {
+      payload.igUrl = data.igUrl.trim().slice(0, 300);
+    }
+    await setDoc(docRef, payload);
     return docId;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -91,8 +94,14 @@ export async function updatePromoter(id: string, data: Partial<PromoterFormData>
     const payload: Record<string, any> = {
       updatedAt: serverTimestamp(),
     };
-    if (data.name !== undefined) payload.name = data.name.trim();
-    if (data.igUrl !== undefined) payload.igUrl = data.igUrl.trim();
+    if (data.name !== undefined) payload.name = data.name.trim().slice(0, 80);
+    if (data.igUrl !== undefined) {
+      if (data.igUrl.trim()) {
+        payload.igUrl = data.igUrl.trim().slice(0, 300);
+      } else {
+        payload.igUrl = '';
+      }
+    }
     if (data.verified !== undefined) payload.verified = Boolean(data.verified);
 
     await updateDoc(docRef, payload);

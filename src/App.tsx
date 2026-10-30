@@ -15,17 +15,20 @@ import { subscribeToEvents } from './services/eventService';
 import { Map } from './components/Map';
 import { Header } from './components/Header';
 import { FilterBar } from './components/FilterBar';
+import { ListView } from './components/ListView';
 import { VenueBottomSheet } from './components/VenueBottomSheet';
 import { EventDetailSheet } from './components/EventDetailSheet';
 import { AdminPanel } from './components/AdminPanel';
 import { VenueListDrawer } from './components/VenueListDrawer';
-import { Language, getInitialLanguage, saveLanguagePreference, translations } from './i18n/translations';
+import { normalizeStatus } from './utils/statusUtils';
+import { Language, getInitialLanguage, saveLanguagePreference, translations } from './i18n';
 import {
   isDateToday,
   isDateThisWeek,
   isDateThisMonth,
   isEventUpcoming,
 } from './utils/dateUtils';
+import { Map as MapIcon, List as ListIcon } from 'lucide-react';
 
 import sampleVenues from '../data/seed/venues.json';
 import samplePromoters from '../data/seed/promoters.json';
@@ -34,7 +37,7 @@ import sampleEvents from '../data/seed/events.json';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
 
-  // Language state (TH / EN) - Requirement 10
+  // Language state (TH / EN) - Default TH
   const [lang, setLang] = useState<Language>(getInitialLanguage());
 
   const handleToggleLang = () => {
@@ -42,6 +45,9 @@ export default function App() {
     setLang(nextLang);
     saveLanguagePreference(nextLang);
   };
+
+  // View mode: 'map' or 'list'
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
   // Collections state
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -52,7 +58,7 @@ export default function App() {
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<ConcertEvent | null>(null);
 
-  // Filter state (Requirement 5)
+  // Filter state (Requirement 4)
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [availableOnly, setAvailableOnly] = useState<boolean>(false);
 
@@ -73,42 +79,6 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
-
-  // Listen to hash routes (#/admin)
-  useEffect(() => {
-    const checkHashRoute = () => {
-      const hash = window.location.hash;
-      const path = window.location.pathname;
-
-      if (hash === '#/admin' || hash === '#admin' || path === '/admin') {
-        setIsAdminOpen(true);
-      } else {
-        setIsAdminOpen(false);
-      }
-    };
-
-    checkHashRoute();
-    window.addEventListener('hashchange', checkHashRoute);
-    window.addEventListener('popstate', checkHashRoute);
-    return () => {
-      window.removeEventListener('hashchange', checkHashRoute);
-      window.removeEventListener('popstate', checkHashRoute);
-    };
-  }, []);
-
-  const handleOpenAdmin = () => {
-    setEditingVenue(null);
-    setIsAdminOpen(true);
-    window.location.hash = '/admin';
-  };
-
-  const handleCloseAdmin = () => {
-    setIsAdminOpen(false);
-    setEditingVenue(null);
-    if (window.location.hash === '#/admin' || window.location.hash === '#admin') {
-      window.location.hash = '';
-    }
-  };
 
   // 1. Subscribe to Venues Collection
   useEffect(() => {
@@ -136,7 +106,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 3. Subscribe to Events Collection (Quota-protected query with limit 80)
+  // 3. Subscribe to Events Collection (Bounded query with limit 80)
   useEffect(() => {
     setLoadingEvents(true);
     const unsubscribe = subscribeToEvents(
@@ -150,17 +120,71 @@ export default function App() {
   }, []);
 
   // Active display collections: live Firestore data or seed samples fallback
-  const isUsingFallback =
-    !loadingVenues &&
-    !loadingEvents &&
-    venues.length === 0 &&
-    events.length === 0;
-
   const activeVenues: Venue[] = venues.length > 0 ? venues : (sampleVenues as Venue[]);
   const activePromoters: Promoter[] =
     promoters.length > 0 ? promoters : (samplePromoters as Promoter[]);
   const activeEvents: ConcertEvent[] =
     events.length > 0 ? events : (sampleEvents as ConcertEvent[]);
+
+  // Listen to hash routes (#/admin, #/list, #/event/{id})
+  useEffect(() => {
+    const handleHashRouting = () => {
+      const hash = window.location.hash;
+      const path = window.location.pathname;
+
+      if (hash === '#/admin' || hash === '#admin' || path === '/admin') {
+        setIsAdminOpen(true);
+      } else {
+        setIsAdminOpen(false);
+      }
+
+      if (hash === '#/list' || hash === '#list') {
+        setViewMode('list');
+      } else if (hash === '#/' || hash === '' || hash === '#') {
+        setViewMode('map');
+      }
+
+      // Check direct link: #/event/{id}
+      const eventMatch = hash.match(/^#\/event\/(.+)$/);
+      if (eventMatch && eventMatch[1]) {
+        const eventId = eventMatch[1];
+        const targetEvt = activeEvents.find((e) => e.id === eventId);
+        if (targetEvt) {
+          setSelectedEvent(targetEvt);
+          const venue = activeVenues.find((v) => v.id === targetEvt.venueId);
+          if (venue) setSelectedVenue(venue);
+        }
+      }
+    };
+
+    handleHashRouting();
+    window.addEventListener('hashchange', handleHashRouting);
+    window.addEventListener('popstate', handleHashRouting);
+    return () => {
+      window.removeEventListener('hashchange', handleHashRouting);
+      window.removeEventListener('popstate', handleHashRouting);
+    };
+  }, [activeEvents, activeVenues]);
+
+  const handleOpenAdmin = () => {
+    setEditingVenue(null);
+    setIsAdminOpen(true);
+    window.location.hash = '/admin';
+  };
+
+  const handleCloseAdmin = () => {
+    setIsAdminOpen(false);
+    setEditingVenue(null);
+    if (window.location.hash === '#/admin' || window.location.hash === '#admin') {
+      window.location.hash = viewMode === 'list' ? '/list' : '';
+    }
+  };
+
+  const handleToggleViewMode = () => {
+    const nextMode = viewMode === 'map' ? 'list' : 'map';
+    setViewMode(nextMode);
+    window.location.hash = nextMode === 'list' ? '/list' : '';
+  };
 
   // Filtered Events based on Date filter and Available Only toggle
   const filteredEvents = useMemo(() => {
@@ -170,13 +194,19 @@ export default function App() {
       if (dateFilter === 'week' && !isDateThisWeek(event.startAt)) return false;
       if (dateFilter === 'month' && !isDateThisMonth(event.startAt)) return false;
 
-      if (availableOnly && event.status !== 'available' && event.status !== 'low') {
+      const norm = normalizeStatus(event.status);
+      if (availableOnly && norm !== 'available' && norm !== 'low') {
         return false;
       }
 
       return true;
     });
   }, [activeEvents, dateFilter, availableOnly]);
+
+  const handleClearFilters = () => {
+    setDateFilter('all');
+    setAvailableOnly(false);
+  };
 
   const handleEditFromSheet = (venue: Venue) => {
     setSelectedVenue(null);
@@ -201,7 +231,7 @@ export default function App() {
   const t = translations[lang];
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-black text-white select-none">
+    <div className="relative w-screen h-screen overflow-hidden bg-black text-white select-none font-sans">
       {/* Top Header with TH/EN Toggle and Admin Button */}
       <Header
         venuesCount={activeVenues.length}
@@ -223,39 +253,65 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Full-screen Leaflet Map with Urgent Event Status Pins (Bangkok & Pathum Thani) */}
-      <Map
-        venues={activeVenues}
-        events={filteredEvents}
-        selectedVenue={selectedVenue}
-        onSelectVenue={(v) => {
-          setSelectedVenue(v);
-          setSelectedEvent(null);
-        }}
-      />
+      {/* Main View Area: Map or List */}
+      <main className="w-full h-full relative">
+        {viewMode === 'map' ? (
+          <Map
+            venues={activeVenues}
+            events={filteredEvents}
+            selectedVenue={selectedVenue}
+            onSelectVenue={(v) => {
+              setSelectedVenue(v);
+              setSelectedEvent(null);
+            }}
+            lang={lang}
+          />
+        ) : (
+          <ListView
+            events={filteredEvents}
+            venues={activeVenues}
+            promoters={activePromoters}
+            loading={loadingEvents}
+            onSelectEvent={(evt) => setSelectedEvent(evt)}
+            onClearFilters={handleClearFilters}
+            lang={lang}
+          />
+        )}
+      </main>
 
-      {/* Sample Data Notice Banner if Firestore is not yet populated */}
-      {isUsingFallback && (
-        <div className="absolute top-28 left-3 z-400 pointer-events-auto">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-amber-500/40 text-amber-300 text-[11px] font-mono shadow-lg backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span>{lang === 'th' ? 'ตัวอย่างข้อมูลไลฟ์เฮาส์' : 'Sample Livehouse Preview'}</span>
-            <button
-              type="button"
-              onClick={handleOpenAdmin}
-              className="ml-1 text-white underline hover:text-lime-400 font-semibold cursor-pointer"
-            >
-              Seed DB
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Floating Switch Button between Map and List View (Requirement 4) */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-600 pointer-events-auto">
+        <button
+          type="button"
+          onClick={handleToggleViewMode}
+          className="flex items-center gap-2.5 px-5 py-3 rounded-full bg-neutral-900/95 hover:bg-neutral-850 text-white font-bold text-xs tracking-wider uppercase border border-neutral-700/80 shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer hover:border-lime-400 group"
+          aria-label={viewMode === 'map' ? t.app.listView : t.app.mapView}
+        >
+          {viewMode === 'map' ? (
+            <>
+              <ListIcon className="w-4 h-4 text-lime-400 group-hover:scale-110 transition-transform" />
+              <span>{t.app.listView}</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-neutral-800 text-[10px] font-mono text-lime-400 border border-neutral-700">
+                {filteredEvents.length}
+              </span>
+            </>
+          ) : (
+            <>
+              <MapIcon className="w-4 h-4 text-lime-400 group-hover:scale-110 transition-transform" />
+              <span>{t.app.mapView}</span>
+            </>
+          )}
+        </button>
+      </div>
 
-      {/* Selected Venue Bottom Sheet (Venue details + Upcoming events list) */}
+      {/* Venue Bottom Sheet (3 Snap levels: peek / half / full) */}
       <VenueBottomSheet
         venue={selectedVenue}
         events={filteredEvents}
-        onSelectEvent={(event) => setSelectedEvent(event)}
+        onSelectEvent={(event) => {
+          setSelectedEvent(event);
+          window.location.hash = `/event/${event.id}`;
+        }}
         onClose={() => setSelectedVenue(null)}
         isAdmin={isAdmin}
         onEdit={handleEditFromSheet}
@@ -267,7 +323,12 @@ export default function App() {
         event={selectedEvent}
         promoter={selectedEventPromoter}
         venueName={selectedEventVenueName}
-        onClose={() => setSelectedEvent(null)}
+        onClose={() => {
+          setSelectedEvent(null);
+          if (window.location.hash.startsWith('#/event/')) {
+            window.location.hash = viewMode === 'list' ? '/list' : '';
+          }
+        }}
         onOpenVenue={() => {
           if (selectedEvent) {
             const v = activeVenues.find((item) => item.id === selectedEvent.venueId);
@@ -277,7 +338,7 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Venues Quick List Drawer with Urgent Status Indicators */}
+      {/* Venues Quick Drawer */}
       {isListDrawerOpen && (
         <VenueListDrawer
           venues={activeVenues}
@@ -292,7 +353,7 @@ export default function App() {
         />
       )}
 
-      {/* Admin Panel (English only, strictly for wantawachjz@gmail.com) */}
+      {/* Admin Panel (English console strictly restricted to wantawachjz@gmail.com) */}
       {isAdminOpen && (
         <AdminPanel
           user={user}

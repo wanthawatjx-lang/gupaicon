@@ -22,7 +22,7 @@ export function subscribeToEvents(
   onData: (events: ConcertEvent[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  // Read with order and limit to protect Firebase free tier quota (Requirement 9)
+  // Read with bounded query: order by startAt and limit 80 to protect quota
   const eventsQuery = query(
     collection(db, COLLECTION_NAME),
     orderBy('startAt', 'asc'),
@@ -46,9 +46,9 @@ export function subscribeToEvents(
           ticketUrl: data.ticketUrl ?? '',
           igPostUrl: data.igPostUrl ?? '',
           posterUrl: data.posterUrl ?? '',
-          status: (data.status as EventStatus) || 'not_open',
+          status: (data.status as EventStatus) || 'notopen',
           statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-          statusSource: (data.statusSource as 'admin' | 'organizer') || 'admin',
+          statusSource: 'admin',
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
         };
@@ -85,9 +85,9 @@ export async function fetchEvents(): Promise<ConcertEvent[]> {
         ticketUrl: data.ticketUrl ?? '',
         igPostUrl: data.igPostUrl ?? '',
         posterUrl: data.posterUrl ?? '',
-        status: (data.status as EventStatus) || 'not_open',
+        status: (data.status as EventStatus) || 'notopen',
         statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-        statusSource: (data.statusSource as 'admin' | 'organizer') || 'admin',
+        statusSource: 'admin',
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
       };
@@ -113,15 +113,12 @@ export async function createEvent(
 
   try {
     const payload: Record<string, any> = {
-      title: data.title.trim(),
-      artists: data.artists.map((a) => a.trim()).filter(Boolean),
+      title: data.title.trim().slice(0, 120),
+      artists: data.artists.map((a) => a.trim()).filter(Boolean).slice(0, 20),
       venueId: data.venueId.trim(),
-      promoterId: data.promoterId.trim(),
       startAt: startTimestamp,
-      priceText: data.priceText.trim() || 'Free Entry',
-      genres: data.genres.map((g) => g.trim()).filter(Boolean),
-      ticketUrl: data.ticketUrl.trim(),
-      igPostUrl: data.igPostUrl.trim(),
+      priceText: (data.priceText.trim() || 'Free Entry').slice(0, 60),
+      genres: data.genres.map((g) => g.trim()).filter(Boolean).slice(0, 8),
       status: data.status,
       statusUpdatedAt: serverTimestamp(),
       statusSource,
@@ -129,6 +126,15 @@ export async function createEvent(
       updatedAt: serverTimestamp(),
     };
 
+    if (data.promoterId && data.promoterId.trim()) {
+      payload.promoterId = data.promoterId.trim();
+    }
+    if (data.ticketUrl && data.ticketUrl.trim()) {
+      payload.ticketUrl = data.ticketUrl.trim();
+    }
+    if (data.igPostUrl && data.igPostUrl.trim()) {
+      payload.igPostUrl = data.igPostUrl.trim();
+    }
     if (data.posterUrl && data.posterUrl.trim()) {
       payload.posterUrl = data.posterUrl.trim();
     }
@@ -154,20 +160,26 @@ export async function updateEvent(
       statusSource,
     };
 
-    if (data.title !== undefined) payload.title = data.title.trim();
+    if (data.title !== undefined) payload.title = data.title.trim().slice(0, 120);
     if (data.artists !== undefined)
-      payload.artists = data.artists.map((a) => a.trim()).filter(Boolean);
+      payload.artists = data.artists.map((a) => a.trim()).filter(Boolean).slice(0, 20);
     if (data.venueId !== undefined) payload.venueId = data.venueId.trim();
-    if (data.promoterId !== undefined) payload.promoterId = data.promoterId.trim();
+    if (data.promoterId !== undefined) {
+      if (data.promoterId.trim()) {
+        payload.promoterId = data.promoterId.trim();
+      } else {
+        payload.promoterId = '';
+      }
+    }
     if (data.startAtIso !== undefined) {
       const startDate = new Date(data.startAtIso);
       if (!isNaN(startDate.getTime())) {
         payload.startAt = Timestamp.fromDate(startDate);
       }
     }
-    if (data.priceText !== undefined) payload.priceText = data.priceText.trim();
+    if (data.priceText !== undefined) payload.priceText = data.priceText.trim().slice(0, 60);
     if (data.genres !== undefined)
-      payload.genres = data.genres.map((g) => g.trim()).filter(Boolean);
+      payload.genres = data.genres.map((g) => g.trim()).filter(Boolean).slice(0, 8);
     if (data.ticketUrl !== undefined) payload.ticketUrl = data.ticketUrl.trim();
     if (data.igPostUrl !== undefined) payload.igPostUrl = data.igPostUrl.trim();
     if (data.posterUrl !== undefined) payload.posterUrl = data.posterUrl.trim();
@@ -184,7 +196,7 @@ export async function updateEvent(
 }
 
 /**
- * One-tap status update for Admin or Organizer (Requirement 3 & 6)
+ * One-tap quick status update with serverTimestamp
  */
 export async function updateEventStatus(
   id: string,
@@ -233,21 +245,20 @@ export async function seedSampleEvents(): Promise<number> {
         title: item.title,
         artists: item.artists,
         venueId: item.venueId,
-        promoterId: item.promoterId,
         startAt: startTimestamp,
         priceText: item.priceText,
         genres: item.genres,
-        ticketUrl: item.ticketUrl,
-        igPostUrl: item.igPostUrl,
         status: item.status,
         statusUpdatedAt: statusTimestamp,
         statusSource: 'admin',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
-      if (item.posterUrl) {
-        payload.posterUrl = item.posterUrl;
-      }
+      if (item.promoterId) payload.promoterId = item.promoterId;
+      if (item.ticketUrl) payload.ticketUrl = item.ticketUrl;
+      if (item.igPostUrl) payload.igPostUrl = item.igPostUrl;
+      if (item.posterUrl) payload.posterUrl = item.posterUrl;
+
       await setDoc(docRef, payload);
       seededCount++;
     } catch (error) {

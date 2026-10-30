@@ -20,7 +20,7 @@ export function parseTimestampToDate(val: any): Date {
 
 /**
  * Format event date & time in Asia/Bangkok
- * e.g. "ศ. 24 เม.ย. 2026 • 19:30" (th) or "Fri, 24 Apr 2026 • 19:30" (en)
+ * e.g. "ศุกร์ 14 มี.ค. 2025 · 20:00 น." (th) or "Fri 14 Mar 2025 · 20:00" (en)
  */
 export function formatBangkokDateTime(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
@@ -28,18 +28,20 @@ export function formatBangkokDateTime(val: any, lang: 'th' | 'en' = 'en'): strin
   try {
     const dateFormatter = new Intl.DateTimeFormat(locale, {
       timeZone: 'Asia/Bangkok',
-      weekday: 'short',
+      weekday: lang === 'th' ? 'long' : 'short',
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     });
-    const timeFormatter = new Intl.DateTimeFormat(locale, {
+    const timeFormatter = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Bangkok',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     });
-    return `${dateFormatter.format(date)} • ${timeFormatter.format(date)}`;
+    const dateStr = dateFormatter.format(date);
+    const timeStr = timeFormatter.format(date);
+    return lang === 'th' ? `${dateStr} · ${timeStr} น.` : `${dateStr} · ${timeStr}`;
   } catch {
     return date.toLocaleString();
   }
@@ -47,7 +49,7 @@ export function formatBangkokDateTime(val: any, lang: 'th' | 'en' = 'en'): strin
 
 /**
  * Format event date only in Asia/Bangkok
- * e.g. "ศ. 24 เม.ย." (th) or "Fri, 24 Apr" (en)
+ * e.g. "ศุกร์ 14 มี.ค." (th) or "Fri 14 Mar" (en)
  */
 export function formatBangkokDateOnly(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
@@ -66,17 +68,18 @@ export function formatBangkokDateOnly(val: any, lang: 'th' | 'en' = 'en'): strin
 
 /**
  * Format event time only in Asia/Bangkok
- * e.g. "19:30"
+ * e.g. "20:00 น." or "20:00"
  */
-export function formatBangkokTimeOnly(val: any): string {
+export function formatBangkokTimeOnly(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    const timeStr = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Bangkok',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     }).format(date);
+    return lang === 'th' ? `${timeStr} น.` : timeStr;
   } catch {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
@@ -84,7 +87,7 @@ export function formatBangkokTimeOnly(val: any): string {
 
 /**
  * Relative time from now with bilingual support
- * e.g. "updated 5m ago" (en) or "อัปเดต 5 นาทีที่แล้ว" (th)
+ * e.g. "updated 12 min ago" (en) or "อัปเดตล่าสุด 12 นาทีที่แล้ว" (th)
  */
 export function formatRelativeTime(val: any, lang: 'th' | 'en' = 'en'): string {
   const date = parseTimestampToDate(val);
@@ -93,25 +96,25 @@ export function formatRelativeTime(val: any, lang: 'th' | 'en' = 'en'): string {
   const diffSec = Math.floor(diffMs / 1000);
 
   if (lang === 'th') {
-    if (diffSec < 45) return 'อัปเดตเมื่อสักครู่';
+    if (diffSec < 45) return 'อัปเดตล่าสุด เมื่อสักครู่';
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `อัปเดต ${diffMin} นาทีที่แล้ว`;
+    if (diffMin < 60) return `อัปเดตล่าสุด ${diffMin} นาทีที่แล้ว`;
     const diffHours = Math.floor(diffMin / 60);
-    if (diffHours < 24) return `อัปเดต ${diffHours} ชม. ที่แล้ว`;
+    if (diffHours < 24) return `อัปเดตล่าสุด ${diffHours} ชั่วโมงที่แล้ว`;
     const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 30) return `อัปเดต ${diffDays} วันที่แล้ว`;
-    return `อัปเดต ${Math.floor(diffDays / 30)} เดือนที่แล้ว`;
+    if (diffDays < 30) return `อัปเดตล่าสุด ${diffDays} วันที่แล้ว`;
+    return `อัปเดตล่าสุด ${Math.floor(diffDays / 30)} เดือนที่แล้ว`;
   }
 
   // English fallback
   if (diffSec < 45) return 'updated just now';
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `updated ${diffMin}m ago`;
+  if (diffMin < 60) return `updated ${diffMin} min ago`;
   const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `updated ${diffHours}h ago`;
+  if (diffHours < 24) return `updated ${diffHours} hours ago`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `updated ${diffDays}d ago`;
-  return `updated ${Math.floor(diffDays / 30)}mo ago`;
+  if (diffDays < 30) return `updated ${diffDays} days ago`;
+  return `updated ${Math.floor(diffDays / 30)} months ago`;
 }
 
 /**

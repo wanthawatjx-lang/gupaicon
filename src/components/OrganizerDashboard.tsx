@@ -126,8 +126,8 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
     setStartAtIso(formatDateForInput(parseTimestampToDate(event.startAt)));
     setPriceText(event.priceText);
     setGenresInput(event.genres.join(', '));
-    setTicketUrl(event.ticketUrl);
-    setIgPostUrl(event.igPostUrl);
+    setTicketUrl(event.ticketUrl || '');
+    setIgPostUrl(event.igPostUrl || '');
     setPosterUrl(event.posterUrl || '');
     setStatus(event.status);
     setActionError(null);

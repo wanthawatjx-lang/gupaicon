@@ -20,11 +20,7 @@ export const ADMIN_EMAILS = [ADMIN_EMAIL];
 
 export function isUserAdmin(email: string | null | undefined, emailVerified?: boolean | null): boolean {
   if (!email) return false;
-  const isMatch = email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-  if (emailVerified !== undefined && emailVerified !== null) {
-    return isMatch && emailVerified === true;
-  }
-  return isMatch;
+  return email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && emailVerified === true;
 }
 
 // Error handling as required by Firebase specification

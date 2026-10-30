@@ -27,7 +27,7 @@ service cloud.firestore {
     }
 
     function isValidStatus(status) {
-      return status in ['not_open', 'available', 'low', 'sold_out', 'cancelled'];
+      return status in ['available', 'low', 'soldout', 'notopen', 'cancelled', 'sold_out', 'not_open'];
     }
 
     function isValidVenue(data) {
@@ -44,10 +44,10 @@ service cloud.firestore {
     }
 
     function isValidPromoter(data) {
-      return data.keys().hasAll(['name', 'igUrl', 'verified'])
+      return data.keys().hasAll(['name', 'verified'])
         && data.keys().hasOnly(['name', 'igUrl', 'verified', 'createdAt', 'updatedAt'])
-        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
-        && data.igUrl is string && data.igUrl.size() <= 300
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && (!('igUrl' in data) || (data.igUrl is string && data.igUrl.size() <= 300))
         && data.verified is bool
         && (!('createdAt' in data) || data.createdAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
@@ -55,8 +55,8 @@ service cloud.firestore {
 
     function isValidEvent(data) {
       return data.keys().hasAll([
-          'title', 'artists', 'venueId', 'promoterId', 'startAt',
-          'priceText', 'genres', 'ticketUrl', 'igPostUrl', 'status',
+          'title', 'artists', 'venueId', 'startAt',
+          'priceText', 'genres', 'status',
           'statusUpdatedAt', 'statusSource'
         ])
         && data.keys().hasOnly([
@@ -64,15 +64,15 @@ service cloud.firestore {
           'priceText', 'genres', 'ticketUrl', 'igPostUrl', 'posterUrl',
           'status', 'statusUpdatedAt', 'statusSource', 'createdAt', 'updatedAt'
         ])
-        && data.title is string && data.title.size() >= 2 && data.title.size() <= 150
-        && data.artists is list && data.artists.size() >= 1 && data.artists.size() <= 30
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.artists is list && data.artists.size() >= 1 && data.artists.size() <= 20
         && data.venueId is string && isValidId(data.venueId)
-        && data.promoterId is string && isValidId(data.promoterId)
+        && (!('promoterId' in data) || (data.promoterId is string && (data.promoterId == '' || isValidId(data.promoterId))))
         && data.startAt is timestamp
-        && data.priceText is string && data.priceText.size() <= 80
-        && data.genres is list && data.genres.size() <= 15
-        && data.ticketUrl is string && data.ticketUrl.size() <= 500
-        && data.igPostUrl is string && data.igPostUrl.size() <= 500
+        && data.priceText is string && data.priceText.size() <= 60
+        && data.genres is list && data.genres.size() <= 8
+        && (!('ticketUrl' in data) || (data.ticketUrl is string && data.ticketUrl.size() <= 500))
+        && (!('igPostUrl' in data) || (data.igPostUrl is string && data.igPostUrl.size() <= 500))
         && (!('posterUrl' in data) || (data.posterUrl is string && data.posterUrl.size() <= 1000))
         && data.status is string && isValidStatus(data.status)
         && data.statusUpdatedAt is timestamp
