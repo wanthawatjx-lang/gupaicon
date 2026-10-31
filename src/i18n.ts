@@ -213,7 +213,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       heading3: 'ไม่มีการขายข้อมูลหรือโฆษณา',
       content3: 'เราไม่มีนโยบายแสดงโฆษณา ไม่มีการขายหรือเปิดเผยข้อมูลส่วนบุคคลของท่านให้แก่บุคคลที่สาม',
       heading4: 'การติดต่อและการขอลบข้อมูล',
-      content4: 'ท่านสามารถติดต่อสอบถาม หรือส่งคำขอให้ลบข้อมูลรายงานสถานะหรือบัญชีของท่านได้โดยตรงที่อีเมล wantawachjz@gmail.com',
+      content4: 'ท่านสามารถติดต่อสอบถาม หรือส่งคำขอให้ลบข้อมูลรายงานสถานะหรือบัญชีของท่านได้โดยตรงที่อีเมล wanthawatjx@gmail.com',
     },
     states: {
       offlineTitle: 'คุณกำลังออฟไลน์',
@@ -232,10 +232,10 @@ export const translations: Record<Language, TranslationDictionary> = {
     },
     admin: {
       title: 'แอดมินคอนโซล',
-      subtitle: 'จัดการร้าน ผู้จัด และคอนเสิร์ต (เฉพาะ wantawachjz@gmail.com)',
+      subtitle: 'จัดการร้าน ผู้จัด และคอนเสิร์ต (เฉพาะ wanthawatjx@gmail.com)',
       loginRequired: 'กรุณาเข้าสู่ระบบด้วย Google',
       loginWithGoogle: 'เข้าสู่ระบบด้วย Google',
-      unauthorized: 'ขออภัย เฉพาะ wantawachjz@gmail.com ที่ได้รับการยืนยันอีเมลแล้วเท่านั้นที่มีสิทธิ์เข้าถึง',
+      unauthorized: 'ขออภัย เฉพาะ wanthawatjx@gmail.com ที่ได้รับการยืนยันอีเมลแล้วเท่านั้นที่มีสิทธิ์เข้าถึง',
       signOut: 'ออกจากระบบ',
       tabs: {
         events: 'จัดการงาน (Events)',
@@ -335,7 +335,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       heading3: 'No Ads & No Data Selling',
       content3: 'We do not display ads, nor do we sell or share your personal data with any third parties.',
       heading4: 'Contact & Data Deletion',
-      content4: 'You can contact us or request the deletion of your reports or account data by emailing wantawachjz@gmail.com.',
+      content4: 'You can contact us or request the deletion of your reports or account data by emailing wanthawatjx@gmail.com.',
     },
     states: {
       offlineTitle: 'You are offline',
@@ -354,10 +354,10 @@ export const translations: Record<Language, TranslationDictionary> = {
     },
     admin: {
       title: 'Admin Console',
-      subtitle: 'Manage Venues, Promoters, and Events (wantawachjz@gmail.com only)',
+      subtitle: 'Manage Venues, Promoters, and Events (wanthawatjx@gmail.com only)',
       loginRequired: 'Please sign in with Google to access admin controls',
       loginWithGoogle: 'Sign in with Google',
-      unauthorized: 'Access denied: Strictly restricted to verified wantawachjz@gmail.com',
+      unauthorized: 'Access denied: Strictly restricted to verified wanthawatjx@gmail.com',
       signOut: 'Sign out',
       tabs: {
         events: 'Events',

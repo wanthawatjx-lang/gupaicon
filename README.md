@@ -30,7 +30,7 @@
 ### 3. ระบบค้นหาคอนเสิร์ตอัตโนมัติด้วย AI และแอดมินรีวิว (AI Event Discovery & Review)
 - **สถาปัตยกรรมความปลอดภัย (Server-Side AI)**:
   - คีย์ Gemini API (`GEMINI_API_KEY`) ถูกเก็บไว้เป็นเซิร์ฟเวอร์ซีเคร็ตฝั่ง backend เท่านั้น (`process.env.GEMINI_API_KEY`, จัดการโดย AI Studio) **ไม่มีวันปรากฏในโค้ดฝั่ง client หรือเบราว์เซอร์**
-  - เซิร์ฟเวอร์ Express (`/api/discover`) ตรวจสอบความถูกต้องของ Firebase ID Token ผ่าน Firebase Admin SDK และจำกัดสิทธิ์เฉพาะแอดมิน `wantawachjz@gmail.com` ที่ยืนยันอีเมลแล้วเท่านั้น (`email_verified == true`)
+  - เซิร์ฟเวอร์ Express (`/api/discover`) ตรวจสอบความถูกต้องของ Firebase ID Token ผ่าน Firebase Admin SDK และจำกัดสิทธิ์เฉพาะแอดมิน `wanthawatjx@gmail.com` ที่ยืนยันอีเมลแล้วเท่านั้น (`email_verified == true`)
   - จำกัดการรันทีละ 1 งาน (Mutex lock) และเรียก Gemini สูงสุดไม่เกิน 15 ครั้งต่อการรัน
 - **Gemini Flash Model & Grounding**: ใช้โมเดล `gemini-3.8-flash` พร้อม Google Search Grounding และ URL Context เพื่อค้นหาคอนเสิร์ตอินดี้ในกรุงเทพฯ และปทุมธานีล่วงหน้า 90 วันตามเงื่อนไขที่กำหนด
 - **Firestore Collections สำหรับ AI**:

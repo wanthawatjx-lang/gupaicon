@@ -154,8 +154,8 @@
           "enum": [
             "available",
             "low",
-            "soldout",
-            "notopen",
+            "sold_out",
+            "not_open",
             "cancelled"
           ],
           "description": "Ticket availability or show status"
@@ -168,7 +168,8 @@
         "statusSource": {
           "type": "string",
           "enum": [
-            "admin"
+            "admin",
+            "organizer"
           ],
           "description": "Source of status verification"
         },
@@ -194,6 +195,31 @@
         "statusUpdatedAt",
         "statusSource"
       ]
+    },
+    "report": {
+      "title": "Crowd Report",
+      "description": "Crowd-reported ticket status subcollection",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "low",
+            "sold_out"
+          ],
+          "description": "Crowd reported ticket status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of report"
+        }
+      },
+      "required": [
+        "status",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -208,6 +234,10 @@
     "/events/{eventId}": {
       "schema": "event",
       "description": "Collection of upcoming livehouse shows and concerts"
+    },
+    "/events/{eventId}/reports/{uid}": {
+      "schema": "report",
+      "description": "Subcollection of crowd-reported ticket statuses by user UID"
     }
   }
 }

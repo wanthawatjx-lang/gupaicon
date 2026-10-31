@@ -236,7 +236,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
                   <span>{t.venueSheet.upcomingEvents}</span>
                 </h3>
                 <span className="text-[11px] font-mono text-neutral-500">
-                  {venueEvents.length} {t.app.eventsCount(venueEvents.length)}
+                  {t.app.eventsCount(venueEvents.length)}
                 </span>
               </div>
 

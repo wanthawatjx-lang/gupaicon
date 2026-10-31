@@ -14,8 +14,8 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Admin email: strictly wantawachjz@gmail.com
-export const ADMIN_EMAIL = 'wantawachjz@gmail.com';
+// Admin email: strictly wanthawatjx@gmail.com
+export const ADMIN_EMAIL = 'wanthawatjx@gmail.com';
 export const ADMIN_EMAILS = [ADMIN_EMAIL];
 
 export function isUserAdmin(email: string | null | undefined, emailVerified?: boolean | null): boolean {

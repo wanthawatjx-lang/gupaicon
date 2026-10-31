@@ -50,8 +50,8 @@ async function startServer() {
     const token = authHeader.split('Bearer ')[1];
     try {
       const decoded = await adminAuth.verifyIdToken(token);
-      if (decoded.email !== 'wantawachjz@gmail.com' || decoded.email_verified !== true) {
-        return res.status(403).json({ error: 'Forbidden: admin access required for wantawachjz@gmail.com' });
+      if (decoded.email !== 'wanthawatjx@gmail.com' || decoded.email_verified !== true) {
+        return res.status(403).json({ error: 'Forbidden: admin access required for wanthawatjx@gmail.com' });
       }
       (req as any).user = decoded;
       next();

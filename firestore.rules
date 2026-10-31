@@ -11,11 +11,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Single strictly authorized admin: wantawachjz@gmail.com with verified email
+    // Single strictly authorized admin: wanthawatjx@gmail.com with verified email
     function isAdmin() {
       return isSignedIn()
         && request.auth.token.email_verified == true
-        && request.auth.token.email == 'wantawachjz@gmail.com';
+        && request.auth.token.email == 'wanthawatjx@gmail.com';
     }
 
     function isValidId(id) {
