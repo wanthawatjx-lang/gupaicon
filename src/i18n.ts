@@ -117,6 +117,8 @@ export interface TranslationDictionary {
       events: string;
       venues: string;
       promoters: string;
+      sources: string;
+      aiReview: string;
     };
     seedSampleEvents: string;
     seedSuccess: string;
@@ -239,6 +241,8 @@ export const translations: Record<Language, TranslationDictionary> = {
         events: 'จัดการงาน (Events)',
         venues: 'จัดการร้าน (Venues)',
         promoters: 'จัดการผู้จัด (Promoters)',
+        sources: 'แหล่งข้อมูล (Sources)',
+        aiReview: 'ตรวจสอบ AI (AI Review)',
       },
       seedSampleEvents: 'Seed ข้อมูลตัวอย่าง (SAMPLE)',
       seedSuccess: 'สร้างข้อมูลตัวอย่าง SAMPLE สำเร็จแล้ว',
@@ -359,6 +363,8 @@ export const translations: Record<Language, TranslationDictionary> = {
         events: 'Events',
         venues: 'Venues',
         promoters: 'Promoters',
+        sources: 'Sources',
+        aiReview: 'AI Review',
       },
       seedSampleEvents: 'Seed Sample Shows (SAMPLE)',
       seedSuccess: 'Sample shows successfully created',

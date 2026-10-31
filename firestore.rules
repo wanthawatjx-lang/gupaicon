@@ -66,7 +66,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'title', 'artists', 'venueId', 'promoterId', 'startAt',
           'priceText', 'genres', 'ticketUrl', 'igPostUrl', 'posterUrl',
-          'status', 'statusUpdatedAt', 'statusSource', 'createdAt', 'updatedAt'
+          'status', 'statusUpdatedAt', 'statusSource', 'createdAt', 'updatedAt',
+          'origin', 'sourceUrl'
         ])
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
         && data.artists is list && data.artists.size() >= 1 && data.artists.size() <= 20
@@ -81,6 +82,8 @@ service cloud.firestore {
         && data.status is string && isValidStatus(data.status)
         && data.statusUpdatedAt is timestamp
         && (data.statusSource in ['admin', 'organizer'])
+        && (!('origin' in data) || (data.origin is string && data.origin in ['manual', 'ai']))
+        && (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 500))
         && (!('createdAt' in data) || data.createdAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
@@ -108,7 +111,7 @@ service cloud.firestore {
       allow update: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
       allow delete: if isAdmin() && isValidId(eventId);
 
-      // 4. Crowd Reports Subcollection: events/{eventId}/reports/{uid} (Requirement 2 & 6)
+      // 4. Crowd Reports Subcollection: events/{eventId}/reports/{uid}
       match /reports/{uid} {
         allow read: if true;
         allow create, update: if isSignedIn()
@@ -120,6 +123,16 @@ service cloud.firestore {
           && incoming().createdAt == request.time;
         allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       }
+    }
+
+    // 5. Sources Collection: Admin only
+    match /sources/{sourceId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 6. Event Drafts Collection: Admin only
+    match /eventDrafts/{draftId} {
+      allow read, write: if isAdmin();
     }
   }
 }

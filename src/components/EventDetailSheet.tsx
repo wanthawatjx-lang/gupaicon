@@ -194,6 +194,28 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 </span>
               </button>
             )}
+
+            {/* AI Source Attribution (Requirement 8) */}
+            {event.origin === 'ai' && event.sourceUrl && (
+              <div className="mt-2 text-xs text-neutral-400 font-mono flex items-center gap-1.5">
+                <span>{lang === 'th' ? 'แหล่งที่มา:' : 'Source:'}</span>
+                <a
+                  href={event.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-lime-400 hover:underline inline-flex items-center gap-1 truncate max-w-[280px]"
+                >
+                  {(() => {
+                    try {
+                      return new URL(event.sourceUrl!).hostname;
+                    } catch {
+                      return event.sourceUrl!;
+                    }
+                  })()}
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Sincerity Notice */}

@@ -22,6 +22,8 @@ export interface ConcertEvent {
   status: EventStatus;
   statusUpdatedAt: string | number | { seconds: number; nanoseconds: number };
   statusSource: 'admin' | 'organizer';
+  origin?: 'manual' | 'ai';
+  sourceUrl?: string;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -43,6 +45,8 @@ export type EventFormData = {
   igPostUrl?: string;
   posterUrl?: string;
   status: EventStatus;
+  origin?: 'manual' | 'ai';
+  sourceUrl?: string;
 };
 
 export type DateFilter = 'all' | 'today' | 'week' | 'month';

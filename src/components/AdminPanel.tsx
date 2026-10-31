@@ -28,8 +28,11 @@ import {
   Calendar,
   Music2,
   Users,
+  Sparkles,
 } from 'lucide-react';
 import { EventReportsBadge } from './admin/EventReportsBadge';
+import { SourcesAdmin } from './admin/SourcesAdmin';
+import { AiReviewAdmin } from './admin/AiReviewAdmin';
 
 interface AdminPanelProps {
   user: User | null;
@@ -40,7 +43,7 @@ interface AdminPanelProps {
   editingVenueInitial?: Venue | null;
 }
 
-type AdminTab = 'events' | 'venues' | 'promoters';
+type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
@@ -565,6 +568,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>Promoters ({promoters.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('sources');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'sources'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Sources</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('ai-review');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'ai-review'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>AI Review</span>
                 </button>
               </div>
 
@@ -1421,6 +1456,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* ==================== TAB 4: SOURCES ==================== */}
+              {activeTab === 'sources' && <SourcesAdmin venues={venues} lang="en" />}
+
+              {/* ==================== TAB 5: AI REVIEW ==================== */}
+              {activeTab === 'ai-review' && <AiReviewAdmin user={user} venues={venues} lang="en" />}
             </div>
           )}
         </div>
