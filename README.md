@@ -1,7 +1,7 @@
 # กูไปคอน (gupaicon)
 
 แผนที่และรายการคอนเสิร์ตอินดี้ / ไลฟ์เฮาส์ ในกรุงเทพฯ และรังสิต/ปทุมธานี (Bangkok & Rangsit Livehouse Map)
-พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์, ระบบรายงานสถานะจากฝูงชน (Crowd-Reported Ticket Status), และระบบค้นหาคอนเสิร์ตอัตโนมัติด้วย AI พร้อมหน้าตรวจสอบโดยแอดมิน (AI Event Discovery & Admin Review)
+พร้อมระบบตรวจสอบและแสดงสถานะบัตรด่วนแบบเรียลไทม์, ระบบรายงานสถานะจากฝูงชน (Crowd-Reported Ticket Status), ระบบค้นหาคอนเสิร์ตอัตโนมัติด้วย AI พร้อมหน้าตรวจสอบโดยแอดมิน (AI Event Discovery & Admin Review), และระบบนำเข้าข้อมูล CSV (Admin CSV Import) และจัดการล้างข้อมูลตัวอย่าง (SAMPLE Data Cleanup)
 
 พัฒนาด้วย **React**, **TypeScript**, **Vite**, **Express Server**, **Leaflet** (OpenStreetMap tiles with dark theme CSS filter), และ **Firebase** (Firestore + Google Authentication) รองรับแผนฟรี Spark Plan ไม่ต้องใช้ Cloud Functions หรือ Firebase Storage
 
@@ -25,7 +25,7 @@
   - แสดงชื่อวง/งาน, ศิลปิน, แนวเพลง, ราคาบัตร, และ **ผู้จัดงาน (Promoter)** พร้อมติ๊กถูกสีฟ้า (`✓`) กรณี verified
   - **ระบบรายงานสถานะจากผู้ใช้**: ปุ่ม "Sign in with Google" สำหรับผู้ใช้งานทั่วไปเพื่อให้รายงานสถานะได้ (Available / Low / Sold out)
   - **Displayed Status Logic**: คำนวณฝั่ง client ตามเงื่อนไขแอดมินหรือรายงานจากฝูงชนอย่างน้อย 3 คนใน 90 นาที
-  - **AI Source Attribution (Requirement 8)**: เมื่อเป็นงานที่ได้มาจาก AI (`origin = "ai"`), จะแสดงลิงก์แหล่งที่มา *"Source: <domain>"* เพื่อให้ผู้ใช้ตรวจสอบได้
+  - **AI Source Attribution**: เมื่อเป็นงานที่ได้มาจาก AI (`origin = "ai"`), จะแสดงลิงก์แหล่งที่มา *"Source: <domain>"* เพื่อให้ผู้ใช้ตรวจสอบได้
 
 ### 3. ระบบค้นหาคอนเสิร์ตอัตโนมัติด้วย AI และแอดมินรีวิว (AI Event Discovery & Review)
 - **สถาปัตยกรรมความปลอดภัย (Server-Side AI)**:
@@ -35,11 +35,36 @@
 - **Gemini Flash Model & Grounding**: ใช้โมเดล `gemini-3.8-flash` พร้อม Google Search Grounding และ URL Context เพื่อค้นหาคอนเสิร์ตอินดี้ในกรุงเทพฯ และปทุมธานีล่วงหน้า 90 วันตามเงื่อนไขที่กำหนด
 - **Firestore Collections สำหรับ AI**:
   - `sources`: แหล่งข้อมูล (search query หรือ URL) สำหรับให้ AI ค้นหา
-  - `eventDrafts`: ร่างข้อมูลคอนเสิร์ตที่ AI ดึงมาได้ พร้อมระบบคำนวณ Warnings (เช่น วันที่ผ่านมาแล้ว, ไม่พบร้านในระบบ, ความมั่นใจต่ำ < 0.6, ขาดลิงก์ซื้อบัตร) และการตรวจจับรายการซ้ำ (Fingerprint)
+  - `eventDrafts`: ร่างข้อมูลคอนเสิร์ตที่ AI ดึงมาได้ พร้อมระบบคำนวณ Warnings และการตรวจจับรายการซ้ำ (Fingerprint)
 - **Admin AI Review Console**:
   - ปุ่ม "Find Events Now" เรียกใช้งาน discovery API พร้อมแสดงผลจำนวนที่พบ
-  - หน้าตรวจสอบร่างข้อมูล (Drafts) พร้อมป้ายระดับความมั่นใจ, Warning chips, และปุ่ม **Approve** (แปลงเป็น event จริง), **Reject**, และ **Edit**
+  - หน้าตรวจสอบร่างข้อมูล (Drafts) พร้อมป้ายระดับความมั่นใจ, Warning chips, และปุ่ม **Approve**, **Reject**, และ **Edit**
   - ปุ่ม **"Approve All Valid"** สำหรับอนุมัติร่างที่มีความมั่นใจ ≥ 0.8 และไม่มีคำเตือนในคลิกเดียว
+
+### 4. ระบบนำเข้าข้อมูล CSV (Admin CSV Import)
+แอดมินสามารถไปที่แท็บ **"Import"** ใน Admin Console เพื่อนำเข้าไฟล์ CSV (รองรับ UTF-8, UTF-8 BOM, ฟิลด์ที่มีคอมม่าและขึ้นบรรทัดใหม่ในเครื่องหมายคำพูด, สูงสุด 500 แถว):
+- **Venues CSV Format & Validation**:
+  - คอลัมน์: `name,lat,lng,address,igUrl,mapsUrl`
+  - กฎการตรวจสอบ: ชื่อความยาว 2-100 ตัวอักษร, ที่อยู่ 2-250 ตัวอักษร, พิกัด Lat (13.40 ถึง 14.30) และ Lng (100.20 ถึง 100.95), `mapsUrl` จำเป็นต้องระบุและขึ้นต้นด้วย `https://`, ข้ามชื่อซ้ำ (case-insensitive)
+  - ตัวอย่างแถว:
+    ```csv
+    name,lat,lng,address,igUrl,mapsUrl
+    SAMPLE Livehouse Bangkok,13.7500,100.5000,123 Rama I Rd Pathum Wan Bangkok,https://instagram.com/samplelivehouse,https://maps.app.goo.gl/sample
+    ```
+- **Events CSV Format & Validation**:
+  - คอลัมน์: `title,artists,venueName,promoterName,startAt,priceText,genres,ticketUrl,igPostUrl,status`
+  - กฎการตรวจสอบ: ชื่อความยาว 1-120 ตัวอักษร, ศิลปินอย่างน้อย 1 คนแยกด้วย `|`, `venueName` ต้องตรงกับร้านในระบบ, `startAt` รูปแบบ `YYYY-MM-DD HH:mm` ตามเวลาประเทศไทย (Asia/Bangkok) และไม่เป็นอดีต, สถานะหนึ่งใน `available`, `low`, `sold_out`, `not_open`, `cancelled`, โปรโมเตอร์ optional (หากไม่พบระบบจะสร้างใหม่ให้อัตโนมัติโดย `verified = false`), ข้ามงานที่ซ้ำ
+  - ตัวอย่างแถว:
+    ```csv
+    title,artists,venueName,promoterName,startAt,priceText,genres,ticketUrl,igPostUrl,status
+    SAMPLE Indie Showcase,Band A|Band B,SAMPLE Livehouse Bangkok,SAMPLE Promoter,2026-12-31 20:00,350 THB,Indie Rock|Shoegaze,https://ticketmelon.com/sample,https://instagram.com/p/sample,available
+    ```
+- **Preview First, Write Second**: ระบบตรวจสอบความถูกต้องและแสดงผลแถวพร้อมสถานะ (OK / Duplicate / Error) ก่อนกดปุ่มยืนยันการเขียนลง Firestore แบบ Batched Write (สูงสุด 400 แถวต่อแบตช์)
+
+### 5. ระบบล้างข้อมูลตัวอย่าง (SAMPLE Data Cleanup)
+ในแท็บ Import หรือส่วนจัดการแอดมิน จะมีปุ่ม **"Delete all SAMPLE data"**:
+- เมื่อคลิก จะต้องพิมพ์ยืนยันคำว่า `DELETE` ในหน้าต่างยืนยัน
+- ระบบจะลบทิ้งทั้ง ร้าน (Venues), ผู้จัดงาน (Promoters), และงานคอนเสิร์ต (Events) ที่มีชื่อหรือชื่อเรื่องขึ้นต้นด้วยคำว่า `"SAMPLE"` (ไม่สนใจตัวพิมพ์เล็ก/ใหญ่) รวมถึงซับคอลเลกชัน `reports` ของงานเหล่านั้นทั้งหมดอย่างหมดจด
 
 ---
 

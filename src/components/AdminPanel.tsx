@@ -29,10 +29,12 @@ import {
   Music2,
   Users,
   Sparkles,
+  Upload,
 } from 'lucide-react';
 import { EventReportsBadge } from './admin/EventReportsBadge';
 import { SourcesAdmin } from './admin/SourcesAdmin';
 import { AiReviewAdmin } from './admin/AiReviewAdmin';
+import { CsvImportAdmin } from './admin/CsvImportAdmin';
 
 interface AdminPanelProps {
   user: User | null;
@@ -43,7 +45,7 @@ interface AdminPanelProps {
   editingVenueInitial?: Venue | null;
 }
 
-type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review';
+type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review' | 'import';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
@@ -600,6 +602,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>AI Review</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('import');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'import'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Import</span>
                 </button>
               </div>
 
@@ -1462,6 +1480,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* ==================== TAB 5: AI REVIEW ==================== */}
               {activeTab === 'ai-review' && <AiReviewAdmin user={user} venues={venues} lang="en" />}
+
+              {/* ==================== TAB 6: IMPORT ==================== */}
+              {activeTab === 'import' && <CsvImportAdmin onDataChanged={() => {}} />}
             </div>
           )}
         </div>
