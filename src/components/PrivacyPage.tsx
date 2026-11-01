@@ -68,7 +68,7 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ lang, onBack }) => {
               {t.heading4}
             </h2>
             <p className="text-neutral-400 text-xs sm:text-sm">
-              {t.content4} <a href="mailto:wantawachjz@gmail.com" className="text-lime-400 underline font-mono">wantawachjz@gmail.com</a>.
+              {t.content4} <a href="mailto:wanthawatjx@gmail.com" className="text-lime-400 underline font-mono">wanthawatjx@gmail.com</a>
             </p>
           </section>
         </div>

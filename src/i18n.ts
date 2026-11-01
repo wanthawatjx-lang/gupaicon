@@ -132,7 +132,7 @@ export interface TranslationDictionary {
 export const translations: Record<Language, TranslationDictionary> = {
   th: {
     app: {
-      title: 'gupaicon',
+      title: 'gupaicon (กูไปคอน)',
       subtitle: 'แผนที่คอนเสิร์ตอินดี้ กรุงเทพฯ & รังสิต',
       searchPlaceholder: 'ค้นหาร้านหรือคอนเสิร์ต...',
       venuesCount: (n) => `${n} ร้าน`,
@@ -207,13 +207,13 @@ export const translations: Record<Language, TranslationDictionary> = {
       title: 'นโยบายความเป็นส่วนตัว (Privacy Policy)',
       backToMap: 'กลับสู่แผนที่',
       heading1: 'ข้อมูลที่เราจัดเก็บ',
-      content1: 'เราจัดเก็บหมายเลขบัญชีผู้ใช้ Google (UID) เมื่อท่านเข้าสู่ระบบเพื่อรายงานสถานะบัตร รวมถึงข้อมูลสถานะบัตรที่ท่านส่งเข้ามา และอีเมลของแอดมินสำหรับการจัดการระบบ',
+      content1: 'เราจัดเก็บหมายเลขบัญชีผู้ใช้ Google (Google Account ID / UID) และรายงานสถานะบัตรที่ท่านส่งเข้ามาเท่านั้น สำหรับข้อมูลคอนเสิร์ตและร้านไลฟ์เฮาส์เป็นข้อมูลสาธารณะ',
       heading2: 'การใช้งานข้อมูล',
-      content2: 'ข้อมูลทั้งหมดใช้เพื่อการแสดงผลสถานะบัตรภายในแอปพลิเคชันกูไปคอน (gupaicon) เท่านั้น',
+      content2: 'ข้อมูลสถานะที่รายงานจะใช้เพื่อการประมวลผลและแสดงผลสถานะบัตรแบบเรียลไทม์ภายในแอปพลิเคชันเท่านั้น',
       heading3: 'ไม่มีการขายข้อมูลหรือโฆษณา',
-      content3: 'เราไม่มีนโยบายแสดงโฆษณา ไม่มีการขายหรือเปิดเผยข้อมูลส่วนบุคคลของท่านให้แก่บุคคลที่สาม',
+      content3: 'เราไม่มีการแสดงโฆษณา และไม่มีการขายหรือส่งต่อข้อมูลส่วนบุคคลใดๆ ทั้งสิ้น',
       heading4: 'การติดต่อและการขอลบข้อมูล',
-      content4: 'ท่านสามารถติดต่อสอบถาม หรือส่งคำขอให้ลบข้อมูลรายงานสถานะหรือบัญชีของท่านได้โดยตรงที่อีเมล wanthawatjx@gmail.com',
+      content4: 'ท่านสามารถติดต่อหรือส่งคำขอให้ลบข้อมูลรายงานสถานะหรือข้อมูลบัญชีได้โดยตรงทางอีเมล wanthawatjx@gmail.com',
     },
     states: {
       offlineTitle: 'คุณกำลังออฟไลน์',
@@ -328,14 +328,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     privacy: {
       title: 'Privacy Policy',
       backToMap: 'Back to map',
-      heading1: 'Information We Store',
-      content1: 'We store your Google account ID (UID) when you sign in to report ticket status, the status reports you submit, and the admin email address for administration.',
+      heading1: 'What We Store',
+      content1: 'We store your Google account ID (UID) and the ticket status reports you submit. Events and livehouse venues are public data.',
       heading2: 'How We Use Data',
-      content2: 'All stored information is used exclusively to display ticket status within the gupaicon application.',
+      content2: 'All reported status updates are used exclusively to compute and display ticket availability within the gupaicon app.',
       heading3: 'No Ads & No Data Selling',
-      content3: 'We do not display ads, nor do we sell or share your personal data with any third parties.',
-      heading4: 'Contact & Data Deletion',
-      content4: 'You can contact us or request the deletion of your reports or account data by emailing wanthawatjx@gmail.com.',
+      content3: 'We do not show ads, and we never sell, share, or monetize user data with third parties.',
+      heading4: 'Contact & Data Deletion Requests',
+      content4: 'You can contact us or request deletion of your status reports or account data anytime at wanthawatjx@gmail.com.',
     },
     states: {
       offlineTitle: 'You are offline',

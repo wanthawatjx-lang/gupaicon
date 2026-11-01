@@ -20,6 +20,9 @@ import { VenueBottomSheet } from './components/VenueBottomSheet';
 import { EventDetailSheet } from './components/EventDetailSheet';
 import { AdminPanel } from './components/AdminPanel';
 import { VenueListDrawer } from './components/VenueListDrawer';
+import { Footer } from './components/Footer';
+import { PrivacyPage } from './components/PrivacyPage';
+import { StatusBanners } from './components/StatusBanners';
 import { normalizeStatus } from './utils/statusUtils';
 import { Language, getInitialLanguage, saveLanguagePreference, translations } from './i18n';
 import {
@@ -58,19 +61,24 @@ export default function App() {
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<ConcertEvent | null>(null);
 
-  // Filter state (Requirement 4)
+  // Filter state (Requirement 4 + Map Marker Filtering)
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [availableOnly, setAvailableOnly] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
 
   // Modal & Drawer navigation
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const [isListDrawerOpen, setIsListDrawerOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
 
-  // Loading state
+  // Loading state & Firestore error tracking
   const [loadingVenues, setLoadingVenues] = useState(true);
   const [loadingPromoters, setLoadingPromoters] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [firestoreError, setFirestoreError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   // Monitor Auth State
   useEffect(() => {
@@ -88,10 +96,13 @@ export default function App() {
         setVenues(data);
         setLoadingVenues(false);
       },
-      () => setLoadingVenues(false)
+      () => {
+        setLoadingVenues(false);
+        setFirestoreError(true);
+      }
     );
     return () => unsubscribe();
-  }, []);
+  }, [retryKey]);
 
   // 2. Subscribe to Promoters Collection
   useEffect(() => {
@@ -101,10 +112,13 @@ export default function App() {
         setPromoters(data);
         setLoadingPromoters(false);
       },
-      () => setLoadingPromoters(false)
+      () => {
+        setLoadingPromoters(false);
+        setFirestoreError(true);
+      }
     );
     return () => unsubscribe();
-  }, []);
+  }, [retryKey]);
 
   // 3. Subscribe to Events Collection (Bounded query with limit 80)
   useEffect(() => {
@@ -114,10 +128,13 @@ export default function App() {
         setEvents(data);
         setLoadingEvents(false);
       },
-      () => setLoadingEvents(false)
+      () => {
+        setLoadingEvents(false);
+        setFirestoreError(true);
+      }
     );
     return () => unsubscribe();
-  }, []);
+  }, [retryKey]);
 
   // Active display collections: live Firestore data or seed samples fallback
   const activeVenues: Venue[] = venues.length > 0 ? venues : (sampleVenues as Venue[]);
@@ -126,7 +143,7 @@ export default function App() {
   const activeEvents: ConcertEvent[] =
     events.length > 0 ? events : (sampleEvents as ConcertEvent[]);
 
-  // Listen to hash routes (#/admin, #/list, #/event/{id})
+  // Listen to hash routes (#/admin, #/privacy, #/list, #/event/{id})
   useEffect(() => {
     const handleHashRouting = () => {
       const hash = window.location.hash;
@@ -136,6 +153,12 @@ export default function App() {
         setIsAdminOpen(true);
       } else {
         setIsAdminOpen(false);
+      }
+
+      if (hash === '#/privacy' || hash === '#privacy' || path === '/privacy') {
+        setIsPrivacyOpen(true);
+      } else {
+        setIsPrivacyOpen(false);
       }
 
       if (hash === '#/list' || hash === '#list') {
@@ -180,14 +203,45 @@ export default function App() {
     }
   };
 
+  const handleOpenPrivacy = () => {
+    setIsPrivacyOpen(true);
+    window.location.hash = '/privacy';
+  };
+
+  const handleClosePrivacy = () => {
+    setIsPrivacyOpen(false);
+    if (window.location.hash === '#/privacy' || window.location.hash === '#privacy') {
+      window.location.hash = viewMode === 'list' ? '/list' : '';
+    }
+  };
+
+  const handleRetry = () => {
+    setFirestoreError(false);
+    setRetryKey((k) => k + 1);
+  };
+
   const handleToggleViewMode = () => {
     const nextMode = viewMode === 'map' ? 'list' : 'map';
     setViewMode(nextMode);
     window.location.hash = nextMode === 'list' ? '/list' : '';
   };
 
-  // Filtered Events based on Date filter and Available Only toggle
+  // Collect unique genres from active events
+  const availableGenres = useMemo(() => {
+    const genreSet = new Set<string>();
+    activeEvents.forEach((e) => {
+      e.genres?.forEach((g) => {
+        if (g && g.trim()) genreSet.add(g.trim());
+      });
+    });
+    return Array.from(genreSet).slice(0, 10);
+  }, [activeEvents]);
+
+  // Filtered Events based on Date, Ticket Availability, Search query, and Genre
   const filteredEvents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const genreFilter = selectedGenre.toLowerCase();
+
     return activeEvents.filter((event) => {
       if (!isEventUpcoming(event.startAt)) return false;
       if (dateFilter === 'today' && !isDateToday(event.startAt)) return false;
@@ -199,13 +253,55 @@ export default function App() {
         return false;
       }
 
+      // Genre filter check
+      if (genreFilter !== 'all') {
+        const hasGenre = event.genres?.some((g) => g.toLowerCase() === genreFilter);
+        if (!hasGenre) return false;
+      }
+
+      // Search keyword filter (matches title, artist names, genre, or host venue)
+      if (q) {
+        const venue = activeVenues.find((v) => v.id === event.venueId);
+        const venueName = (venue?.name || '').toLowerCase();
+        const titleMatch = event.title.toLowerCase().includes(q);
+        const artistMatch = event.artists?.some((a) => a.toLowerCase().includes(q));
+        const genreMatch = event.genres?.some((g) => g.toLowerCase().includes(q));
+        const venueMatch = venueName.includes(q);
+        if (!titleMatch && !artistMatch && !genreMatch && !venueMatch) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [activeEvents, dateFilter, availableOnly]);
+  }, [activeEvents, activeVenues, dateFilter, availableOnly, searchQuery, selectedGenre]);
+
+  // Marker Filtering: Filter venues displayed on the map
+  const isAnyFilterActive =
+    dateFilter !== 'all' ||
+    availableOnly ||
+    searchQuery.trim().length > 0 ||
+    selectedGenre !== 'all';
+
+  const filteredVenues = useMemo(() => {
+    if (!isAnyFilterActive) {
+      return activeVenues;
+    }
+    const q = searchQuery.trim().toLowerCase();
+    const venueIdsWithFilteredEvents = new Set(filteredEvents.map((e) => e.venueId));
+
+    return activeVenues.filter((venue) => {
+      if (venueIdsWithFilteredEvents.has(venue.id)) return true;
+      if (q && venue.name.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [activeVenues, filteredEvents, isAnyFilterActive, searchQuery]);
 
   const handleClearFilters = () => {
     setDateFilter('all');
     setAvailableOnly(false);
+    setSearchQuery('');
+    setSelectedGenre('all');
   };
 
   const handleEditFromSheet = (venue: Venue) => {
@@ -244,12 +340,18 @@ export default function App() {
         isAdminSignedIn={isAdmin}
       />
 
-      {/* Filter Bar (Today / This week / This month / All + Tickets available only) */}
+      {/* Filter Bar with Date, Tickets, Search & Genre marker filtering */}
       <FilterBar
         dateFilter={dateFilter}
         onDateFilterChange={setDateFilter}
         availableOnly={availableOnly}
         onAvailableOnlyToggle={() => setAvailableOnly(!availableOnly)}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        selectedGenre={selectedGenre}
+        onGenreChange={setSelectedGenre}
+        availableGenres={availableGenres}
+        onClearFilters={handleClearFilters}
         lang={lang}
       />
 
@@ -257,13 +359,14 @@ export default function App() {
       <main className="w-full h-full relative">
         {viewMode === 'map' ? (
           <Map
-            venues={activeVenues}
+            venues={filteredVenues}
             events={filteredEvents}
             selectedVenue={selectedVenue}
             onSelectVenue={(v) => {
               setSelectedVenue(v);
-              setSelectedEvent(null);
             }}
+            onSelectEvent={(evt) => setSelectedEvent(evt)}
+            onClearFilters={handleClearFilters}
             lang={lang}
           />
         ) : (
@@ -339,11 +442,19 @@ export default function App() {
         lang={lang}
       />
 
+      {/* Offline & Firestore Error Banners */}
+      <StatusBanners
+        lang={lang}
+        hasError={firestoreError}
+        onRetry={handleRetry}
+      />
+
       {/* Venues Quick Drawer */}
       {isListDrawerOpen && (
         <VenueListDrawer
           venues={activeVenues}
           events={filteredEvents}
+          loading={loadingVenues}
           onSelectVenue={(v) => {
             setSelectedVenue(v);
             setSelectedEvent(null);
@@ -354,7 +465,15 @@ export default function App() {
         />
       )}
 
-      {/* Admin Panel (English console strictly restricted to wantawachjz@gmail.com) */}
+      {/* Small Disclaimer Footer with Privacy Policy link */}
+      <Footer lang={lang} onOpenPrivacy={handleOpenPrivacy} />
+
+      {/* Privacy Policy Page Modal */}
+      {isPrivacyOpen && (
+        <PrivacyPage lang={lang} onBack={handleClosePrivacy} />
+      )}
+
+      {/* Admin Panel (English console strictly restricted to wanthawatjx@gmail.com) */}
       {isAdminOpen && (
         <AdminPanel
           user={user}

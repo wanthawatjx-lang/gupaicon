@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Lock,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 interface EventDetailSheetProps {
@@ -48,7 +49,62 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+
+  // Gemini AI Vibe Preview states
+  const [aiPreview, setAiPreview] = useState<{
+    vibeSummary: string;
+    lineupHighlights: string[];
+    crowdAtmosphere: string;
+    practicalTip: string;
+  } | null>(null);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const t = translations[lang];
+
+  // Reset AI preview when event changes
+  useEffect(() => {
+    setAiPreview(null);
+    setAiError(null);
+  }, [event?.id]);
+
+  const handleFetchAiPreview = async () => {
+    if (!event) return;
+    setIsLoadingAi(true);
+    setAiError(null);
+    try {
+      const res = await fetch('/api/event-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: event.title,
+          artists: event.artists,
+          venueName: venueName || 'Livehouse',
+          genres: event.genres,
+          startAt: event.startAt,
+          lang,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            (lang === 'th'
+              ? 'ไม่สามารถดึงข้อมูล AI Vibe ได้ กรุณาลองใหม่อีกครั้ง'
+              : 'Failed to generate preview. Please try again.')
+        );
+      }
+      if (data.success && data.preview) {
+        setAiPreview(data.preview);
+      } else {
+        throw new Error(data.error || 'No preview details generated');
+      }
+    } catch (err: any) {
+      setAiError(err?.message || (lang === 'th' ? 'เกิดข้อผิดพลาดในการดึงข้อมูล Vibe' : 'Failed to generate preview'));
+    } finally {
+      setIsLoadingAi(false);
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
@@ -214,6 +270,115 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                   })()}
                   <ExternalLink className="w-3 h-3 shrink-0" />
                 </a>
+              </div>
+            )}
+          </div>
+
+          {/* AI Vibe & Show Breakdown Section (Powered by geminiClient) */}
+          <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold font-mono text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-lime-400" />
+                <span>{lang === 'th' ? 'AI Vibe Check & วิเคราะห์โชว์' : 'AI Vibe Check & Breakdown'}</span>
+              </h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                Gemini 3.8
+              </span>
+            </div>
+
+            {/* State 1: Idle (Not requested yet) */}
+            {!aiPreview && !isLoadingAi && !aiError && (
+              <div className="flex flex-col items-center text-center p-3 rounded-xl bg-neutral-950/60 border border-neutral-850 gap-2">
+                <p className="text-xs text-neutral-400">
+                  {lang === 'th'
+                    ? 'อยากรู้ว่าวงนี้ซาวด์เป็นยังไง บรรยากาศคนดูแบบไหน และควรไปกี่โมง?'
+                    : 'Curious about this band’s live sound, crowd vibe, and insider gig tips?'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleFetchAiPreview}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{lang === 'th' ? 'เช็ค Vibe งานนี้ (Gemini AI)' : 'Generate AI Vibe Check'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* State 2: Loading State */}
+            {isLoadingAi && (
+              <div className="p-4 rounded-xl bg-neutral-950/70 border border-neutral-850 space-y-2.5 animate-pulse">
+                <div className="flex items-center gap-2 text-xs text-lime-400">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span className="font-semibold">
+                    {lang === 'th'
+                      ? 'กำลังวิเคราะห์ซาวด์ดนตรีและบรรยากาศไลฟ์เฮาส์...'
+                      : 'Analyzing artists, venue acoustics, and gig vibe...'}
+                  </span>
+                </div>
+                <div className="h-3 bg-neutral-800 rounded-sm w-full" />
+                <div className="h-3 bg-neutral-800 rounded-sm w-4/5" />
+                <div className="h-8 bg-neutral-850 rounded-lg w-full mt-2" />
+              </div>
+            )}
+
+            {/* State 3: Error State */}
+            {aiError && (
+              <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/70 space-y-2">
+                <div className="flex items-center gap-2 text-xs text-red-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{aiError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchAiPreview}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs cursor-pointer active:scale-95 transition-all"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>{lang === 'th' ? 'ลองใหม่อีกครั้ง' : 'Retry'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* State 4: Loaded State */}
+            {aiPreview && (
+              <div className="space-y-2.5 animate-in fade-in duration-200">
+                {/* Vibe Atmosphere Quote */}
+                <div className="p-3 rounded-xl bg-neutral-950/80 border border-lime-400/20">
+                  <p className="text-xs text-neutral-200 italic leading-relaxed">
+                    "{aiPreview.vibeSummary}"
+                  </p>
+                </div>
+
+                {/* Lineup Highlights */}
+                {aiPreview.lineupHighlights && aiPreview.lineupHighlights.length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-neutral-950/50 border border-neutral-850 space-y-1">
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 font-bold">
+                      {lang === 'th' ? 'จุดเด่นของศิลปินและซาวด์:' : 'Lineup Sound Highlights:'}
+                    </span>
+                    <ul className="text-xs text-neutral-300 space-y-1 list-disc list-inside">
+                      {aiPreview.lineupHighlights.map((hl, i) => (
+                        <li key={i} className="leading-snug">{hl}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Crowd Atmosphere & Tips Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-neutral-950/50 border border-neutral-850 space-y-0.5">
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 font-bold block">
+                      {lang === 'th' ? 'บรรยากาศคนดู:' : 'Crowd Vibe:'}
+                    </span>
+                    <p className="text-neutral-300 font-medium">{aiPreview.crowdAtmosphere}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-neutral-950/50 border border-neutral-850 space-y-0.5">
+                    <span className="text-[10px] font-mono uppercase text-lime-400 font-bold block">
+                      💡 {lang === 'th' ? 'คำแนะนำการเดินทาง/เวลา:' : 'Insider Tip:'}
+                    </span>
+                    <p className="text-neutral-300">{aiPreview.practicalTip}</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -448,7 +613,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
           {/* Report a problem mailto link (Requirement 4) */}
           <div className="pt-3 text-center">
             <a
-              href={`mailto:wantawachjz@gmail.com?subject=${encodeURIComponent(`Problem regarding event: ${event.title}`)}`}
+              href={`mailto:wanthawatjx@gmail.com?subject=${encodeURIComponent(`Problem regarding event: ${event.title}`)}`}
               className="text-xs font-mono text-neutral-500 hover:text-neutral-300 underline underline-offset-2 transition-colors"
             >
               {t.eventDetail.reportAProblem}

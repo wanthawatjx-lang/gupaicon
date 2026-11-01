@@ -8,6 +8,7 @@ import { MapPin, X, Search, ChevronRight, Music2 } from 'lucide-react';
 interface VenueListDrawerProps {
   venues: Venue[];
   events?: ConcertEvent[];
+  loading?: boolean;
   onSelectVenue: (venue: Venue) => void;
   onClose: () => void;
   lang: Language;
@@ -16,6 +17,7 @@ interface VenueListDrawerProps {
 export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
   venues,
   events = [],
+  loading = false,
   onSelectVenue,
   onClose,
   lang,
@@ -76,7 +78,19 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
 
         {/* List items */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2 p-1">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="p-3 rounded-xl bg-neutral-900/40 border border-neutral-800/80 animate-pulse space-y-2"
+                >
+                  <div className="h-4 bg-neutral-800 rounded w-2/3" />
+                  <div className="h-3 bg-neutral-800 rounded w-4/5" />
+                </div>
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-xs text-neutral-500">
               {lang === 'th' ? 'ไม่พบข้อมูลร้านที่ค้นหา' : 'No matching venues found.'}
             </div>
