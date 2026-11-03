@@ -69,19 +69,19 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   }, [event?.id]);
 
   const handleFetchAiPreview = async () => {
-    if (!event) return;
+    if (!event || !user) return;
     setIsLoadingAi(true);
     setAiError(null);
     try {
+      const idToken = await user.getIdToken();
       const res = await fetch('/api/event-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
-          title: event.title,
-          artists: event.artists,
-          venueName: venueName || 'Livehouse',
-          genres: event.genres,
-          startAt: event.startAt,
+          eventId: event.id,
           lang,
         }),
       });
@@ -288,21 +288,40 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
 
             {/* State 1: Idle (Not requested yet) */}
             {!aiPreview && !isLoadingAi && !aiError && (
-              <div className="flex flex-col items-center text-center p-3 rounded-xl bg-neutral-950/60 border border-neutral-850 gap-2">
-                <p className="text-xs text-neutral-400">
-                  {lang === 'th'
-                    ? 'อยากรู้ว่าวงนี้ซาวด์เป็นยังไง บรรยากาศคนดูแบบไหน และควรไปกี่โมง?'
-                    : 'Curious about this band’s live sound, crowd vibe, and insider gig tips?'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleFetchAiPreview}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{lang === 'th' ? 'เช็ค Vibe งานนี้ (Gemini AI)' : 'Generate AI Vibe Check'}</span>
-                </button>
-              </div>
+              !user ? (
+                <div className="flex flex-col items-center text-center p-3 rounded-xl bg-neutral-950/60 border border-neutral-850 gap-2">
+                  <p className="text-xs text-neutral-400">
+                    {lang === 'th'
+                      ? 'เข้าสู่ระบบเพื่อดู AI preview'
+                      : 'Sign in to see the AI preview'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSignInForReport}
+                    disabled={isSigningIn}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{lang === 'th' ? 'เข้าสู่ระบบเพื่อดู AI preview' : 'Sign in to see the AI preview'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center text-center p-3 rounded-xl bg-neutral-950/60 border border-neutral-850 gap-2">
+                  <p className="text-xs text-neutral-400">
+                    {lang === 'th'
+                      ? 'อยากรู้ว่าวงนี้ซาวด์เป็นยังไง บรรยากาศคนดูแบบไหน และควรไปกี่โมง?'
+                      : 'Curious about this band’s live sound, crowd vibe, and insider gig tips?'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleFetchAiPreview}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{lang === 'th' ? 'เช็ค Vibe งานนี้ (Gemini AI)' : 'Generate AI Vibe Check'}</span>
+                  </button>
+                </div>
+              )
             )}
 
             {/* State 2: Loading State */}

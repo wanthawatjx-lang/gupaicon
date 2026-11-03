@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { EventDraft } from '../../types/draft';
 import { Venue } from '../../types/venue';
+import { EventStatus } from '../../types/event';
 import { subscribeToEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft, deleteEventDraft } from '../../services/draftService';
+import { formatBangkokDateTime } from '../../utils/dateUtils';
 import { Language, translations } from '../../i18n';
 import {
   Sparkles,
@@ -35,9 +37,13 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Status selection per draft (defaults to 'not_open')
+  const [draftStatuses, setDraftStatuses] = useState<Record<string, EventStatus>>({});
+
   // Edit draft modal state
   const [editingDraft, setEditingDraft] = useState<EventDraft | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<EventDraft>>({});
+  const [editDraftStatus, setEditDraftStatus] = useState<EventStatus>('not_open');
 
   useEffect(() => {
     setLoading(true);
@@ -94,10 +100,11 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
       alert('Please select a matched venue before approving this event draft.');
       return;
     }
+    const chosenStatus: EventStatus = draftStatuses[draft.id] || 'not_open';
     setError(null);
     try {
-      await approveEventDraft(draft);
-      setSuccess(`Approved event "${draft.title}" and published to live events.`);
+      await approveEventDraft(draft, chosenStatus);
+      setSuccess(`Approved event "${draft.title}" with status "${chosenStatus}".`);
     } catch (err: any) {
       setError(err?.message || 'Failed to approve draft.');
     }
@@ -121,16 +128,16 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
       return;
     }
 
-    if (!confirm(`Are you sure you want to approve all ${validDrafts.length} valid event drafts?`)) return;
+    if (!confirm(`Are you sure you want to approve all ${validDrafts.length} valid event drafts with status "not_open"?`)) return;
 
     setError(null);
     let approvedCount = 0;
     try {
       for (const d of validDrafts) {
-        await approveEventDraft(d);
+        await approveEventDraft(d, 'not_open');
         approvedCount++;
       }
-      setSuccess(`Successfully approved ${approvedCount} valid event drafts!`);
+      setSuccess(`Successfully approved ${approvedCount} valid event drafts with status "not_open"!`);
     } catch (err: any) {
       setError(err?.message || `Approved ${approvedCount} drafts before error occurred.`);
     }
@@ -138,6 +145,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
 
   const handleOpenEdit = (draft: EventDraft) => {
     setEditingDraft(draft);
+    setEditDraftStatus(draftStatuses[draft.id] || 'not_open');
     setEditFormData({
       title: draft.title,
       artists: draft.artists,
@@ -157,6 +165,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
     setError(null);
     try {
       await updateEventDraft(editingDraft.id, editFormData);
+      setDraftStatuses((prev) => ({ ...prev, [editingDraft.id]: editDraftStatus }));
       setSuccess('Draft updated successfully.');
       setEditingDraft(null);
     } catch (err: any) {
@@ -270,7 +279,24 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
                       <h4 className="text-lg font-bold text-white">{draft.title}</h4>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
+                    <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                      <select
+                        value={draftStatuses[draft.id] || 'not_open'}
+                        onChange={(e) =>
+                          setDraftStatuses({
+                            ...draftStatuses,
+                            [draft.id]: e.target.value as EventStatus,
+                          })
+                        }
+                        className="px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 text-xs font-mono focus:outline-none focus:border-lime-400 cursor-pointer"
+                        title="Status on approval"
+                      >
+                        <option value="not_open">not_open (default)</option>
+                        <option value="available">available</option>
+                        <option value="low">low</option>
+                        <option value="sold_out">sold_out</option>
+                        <option value="cancelled">cancelled</option>
+                      </select>
                       <button
                         type="button"
                         onClick={() => handleOpenEdit(draft)}
@@ -320,7 +346,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
 
                     <div>
                       <span className="block text-xs font-mono uppercase tracking-wider text-neutral-500 mb-0.5">Date & Time</span>
-                      <span className="text-neutral-200 font-mono text-xs">{draft.startAt}</span>
+                      <span className="text-neutral-200 font-mono text-xs">{formatBangkokDateTime(draft.startAt, lang)}</span>
                     </div>
 
                     <div>
@@ -428,13 +454,30 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
               </div>
 
               <div>
-                <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400 mb-1">Ticket URL</label>
+                <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400 mb-1">Ticket URL (must start with https://)</label>
                 <input
                   type="url"
+                  pattern="https://.*"
                   value={editFormData.ticketUrl || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, ticketUrl: e.target.value })}
+                  placeholder="https://..."
                   className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-lime-400"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400 mb-1">Status on Approval</label>
+                <select
+                  value={editDraftStatus}
+                  onChange={(e) => setEditDraftStatus(e.target.value as EventStatus)}
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:border-lime-400 font-mono"
+                >
+                  <option value="not_open">not_open (default)</option>
+                  <option value="available">available</option>
+                  <option value="low">low</option>
+                  <option value="sold_out">sold_out</option>
+                  <option value="cancelled">cancelled</option>
+                </select>
               </div>
 
               <div>

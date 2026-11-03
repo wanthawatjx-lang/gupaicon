@@ -107,11 +107,11 @@
 
 ---
 
-## การตั้งค่าความปลอดภัยและคีย์ในเครื่อง (Security & Multi-Key Setup)
+## การตั้งค่าความปลอดภัยและคีย์ในเครื่อง (Security & Environment Setup)
 
 > ⚠️ **คำเตือนด้านความปลอดภัยสำหรับ Public Repository**:
 > **ห้าม Commit หรือ Push ไฟล์ `.env` ที่มีคีย์จริงขึ้นบน GitHub เด็ดขาด!** 
-> โปรเจกต์นี้มีกฎ `.gitignore` ที่ครอบคลุมไฟล์ `.env*`, ซีเคร็ต, และไฟล์ใบรับรองต่างๆ ไว้แล้ว
+> โปรเจกต์นี้มีกฎ `.gitignore` ที่ครอบคลุมไฟล์ `.env*`, ซีเคร็ต, และไฟล์ใบรับรองต่างๆ ไว้แล้ว และไม่มีการบันทึกหรือพิมพ์คีย์ใดๆ ลงใน Log
 
 ### 1. การสร้างไฟล์ `.env` สำหรับ Local Development
 คัดลอกไฟล์เทมเพลต `.env.example` ไปเป็น `.env`:
@@ -119,22 +119,15 @@
 cp .env.example .env
 ```
 
-### 2. การกำหนดค่า Multi-Key Rotation สำหรับ Gemini API
-โมดูล `geminiClient.js` รองรับการสลับคีย์อัตโนมัติเมื่อเกิด HTTP 429 (Rate Limit):
+### 2. การกำหนดค่าคีย์ Gemini API (Server-Side)
+โมดูล `geminiClient.js` ทำงานบนเซิร์ฟเวอร์เท่านั้น พร้อมระบบตรวจจับ Rate Limit (HTTP 429):
 ```bash
-# กำหนดคีย์ได้หลายชุดเพื่อการสลับใช้งานอัตโนมัติ (Failover & Load distribution)
-GEMINI_API_KEY_1="AIzaSyYourFirstGeminiApiKey"
-GEMINI_API_KEY_2="AIzaSyYourSecondGeminiApiKey"
-GEMINI_API_KEY_3="AIzaSyYourThirdGeminiApiKey"
-
-# หรือใช้คีย์เดี่ยวพื้นฐาน
-GEMINI_API_KEY="AIzaSyYourSingleGeminiApiKey"
+GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
 ```
 
-### 3. กลไกการทำงานของ Multi-Key Rotation
-- **ตรวจจับ 429 / Quota Exhausted**: หากคีย์ที่ 1 ติด Rate Limit ระบบจะเข้าสู่ cooldown ชั่วคราว และสลับไปยังคีย์ที่ 2 หรือ 3 โดยอัตโนมัติทันที
-- **ป้องกันการรั่วไหลของคีย์**: ข้อมูลคีย์จะถูก Mask ใน Log เสมอ (เช่น `AIzaSy1...stuv`) และไม่มีการส่งคีย์ไปยังฝั่งเบราว์เซอร์
-- **กรณีคีย์ทั้งหมดหมดโควตา**: ระบบจะแจ้งเตือนผู้ใช้ด้วยข้อความที่ชัดเจนพร้อมสถานะ HTTP 429 และแนะนำให้รอสักครู่ก่อนลองใหม่
+- **ความปลอดภัย**: ตัวแปรคีย์จะทำงานเฉพาะฝั่งเซิร์ฟเวอร์ Express เท่านั้น และจะไม่มีวันถูกส่งต่อไปยังเบราว์เซอร์หรือพิมพ์ลงใน Log
+- **การจัดการ Rate Limit (429)**: หากเกินโควตา ระบบจะตอบกลับด้วยข้อความแจ้งเตือนที่เข้าใจง่ายทั้งภาษาไทยและอังกฤษ พร้อมส่ง HTTP Status 429
+
 
 ---
 

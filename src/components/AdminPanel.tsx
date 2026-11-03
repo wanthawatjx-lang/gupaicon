@@ -224,6 +224,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleVenueFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!venueFormData.name.trim()) return setErrorMessage('Venue name is required.');
+    if (venueFormData.igUrl && venueFormData.igUrl.trim() && !venueFormData.igUrl.trim().startsWith('https://')) {
+      return setErrorMessage('Instagram URL must start with https://');
+    }
+    if (venueFormData.mapsUrl && venueFormData.mapsUrl.trim() && !venueFormData.mapsUrl.trim().startsWith('https://')) {
+      return setErrorMessage('Google Maps URL must start with https://');
+    }
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
@@ -260,6 +266,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handlePromoterFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!promoterFormData.name.trim()) return setErrorMessage('Promoter name is required.');
+    if (promoterFormData.igUrl && promoterFormData.igUrl.trim() && !promoterFormData.igUrl.trim().startsWith('https://')) {
+      return setErrorMessage('Instagram URL must start with https://');
+    }
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
@@ -327,6 +336,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!eventFormData.title.trim()) return setErrorMessage('Event title is required.');
     if (!eventFormData.venueId) return setErrorMessage('Venue selection is required.');
     if (!eventFormData.promoterId) return setErrorMessage('Promoter selection is required.');
+    if (eventFormData.ticketUrl && eventFormData.ticketUrl.trim() && !eventFormData.ticketUrl.trim().startsWith('https://')) {
+      return setErrorMessage('Ticket URL must start with https://');
+    }
+    if (eventFormData.igPostUrl && eventFormData.igPostUrl.trim() && !eventFormData.igPostUrl.trim().startsWith('https://')) {
+      return setErrorMessage('Instagram Post URL must start with https://');
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -822,10 +837,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Ticket URL
+                              Ticket URL (must start with https://)
                             </label>
                             <input
                               type="url"
+                              pattern="https://.*"
+                              title="Must start with https://"
                               value={eventFormData.ticketUrl}
                               onChange={(e) =>
                                 setEventFormData({ ...eventFormData, ticketUrl: e.target.value })
@@ -836,10 +853,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Instagram Post URL
+                              Instagram Post URL (must start with https://)
                             </label>
                             <input
                               type="url"
+                              pattern="https://.*"
+                              title="Must start with https://"
                               value={eventFormData.igPostUrl}
                               onChange={(e) =>
                                 setEventFormData({ ...eventFormData, igPostUrl: e.target.value })
@@ -1176,10 +1195,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Instagram URL
+                              Instagram URL (must start with https://)
                             </label>
                             <input
                               type="url"
+                              pattern="https://.*"
+                              title="Must start with https://"
                               value={venueFormData.igUrl}
                               onChange={(e) =>
                                 setVenueFormData({ ...venueFormData, igUrl: e.target.value })
@@ -1190,10 +1211,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-neutral-300 mb-1">
-                              Google Maps URL
+                              Google Maps URL (must start with https://)
                             </label>
                             <input
                               type="url"
+                              pattern="https://.*"
+                              title="Must start with https://"
                               value={venueFormData.mapsUrl}
                               onChange={(e) =>
                                 setVenueFormData({ ...venueFormData, mapsUrl: e.target.value })
@@ -1350,10 +1373,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                         <div>
                           <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Instagram URL
+                            Instagram URL (must start with https://)
                           </label>
                           <input
                             type="url"
+                            pattern="https://.*"
+                            title="Must start with https://"
                             value={promoterFormData.igUrl}
                             onChange={(e) =>
                               setPromoterFormData({ ...promoterFormData, igUrl: e.target.value })

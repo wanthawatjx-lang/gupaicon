@@ -426,11 +426,15 @@ export async function executeEventsImport(
       const eventId = `event_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const docRef = doc(db, 'events', eventId);
 
+      if (!row.startAtDate || isNaN(row.startAtDate.getTime())) {
+        throw new Error(`Event "${row.title}" has an invalid start date. Import blocked.`);
+      }
+
       const payload: Record<string, any> = {
         title: row.title,
         artists: row.artists,
         venueId,
-        startAt: row.startAtDate ? Timestamp.fromDate(row.startAtDate) : Timestamp.now(),
+        startAt: Timestamp.fromDate(row.startAtDate),
         priceText: row.priceText,
         genres: row.genres,
         status: row.eventStatus,
@@ -470,7 +474,7 @@ export async function deleteAllSampleData(): Promise<{
   const sampleEvents = eventsSnap.docs.filter((d) => d.data().title?.toUpperCase().startsWith('SAMPLE'));
 
   let reportsDeleted = 0;
-  const batch = writeBatch(db);
+  let batch = writeBatch(db);
   let batchCount = 0;
 
   for (const evDoc of sampleEvents) {
@@ -482,6 +486,7 @@ export async function deleteAllSampleData(): Promise<{
         batchCount++;
         if (batchCount >= 400) {
           await batch.commit();
+          batch = writeBatch(db);
           batchCount = 0;
         }
       }
@@ -493,6 +498,7 @@ export async function deleteAllSampleData(): Promise<{
     batchCount++;
     if (batchCount >= 400) {
       await batch.commit();
+      batch = writeBatch(db);
       batchCount = 0;
     }
   }
@@ -502,6 +508,7 @@ export async function deleteAllSampleData(): Promise<{
     batchCount++;
     if (batchCount >= 400) {
       await batch.commit();
+      batch = writeBatch(db);
       batchCount = 0;
     }
   }
@@ -511,6 +518,7 @@ export async function deleteAllSampleData(): Promise<{
     batchCount++;
     if (batchCount >= 400) {
       await batch.commit();
+      batch = writeBatch(db);
       batchCount = 0;
     }
   }

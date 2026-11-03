@@ -78,47 +78,65 @@ export async function deleteEventDraft(id: string): Promise<void> {
   }
 }
 
-export async function approveEventDraft(draft: EventDraft): Promise<string> {
+export async function approveEventDraft(
+  draft: EventDraft,
+  selectedStatus: EventStatus = 'not_open'
+): Promise<string> {
   if (!draft.matchedVenueId) {
     throw new Error('Cannot approve event draft without a matched venue.');
   }
+
+  // Dates: if startAt is invalid, throw an error and block approval instead of using the current time
+  if (!draft.startAt || typeof draft.startAt !== 'string') {
+    throw new Error('Event draft startAt date is missing or invalid.');
+  }
+  const startDate = new Date(draft.startAt);
+  if (isNaN(startDate.getTime())) {
+    throw new Error(`Invalid startAt date "${draft.startAt}". Cannot approve draft.`);
+  }
+  const startTimestamp = Timestamp.fromDate(startDate);
+
+  // Status: never guess status from notes/ticketUrl. Use admin's choice (defaulting to "not_open")
+  const validStatuses: EventStatus[] = ['available', 'low', 'sold_out', 'not_open', 'cancelled'];
+  const status: EventStatus = validStatuses.includes(selectedStatus) ? selectedStatus : 'not_open';
 
   const eventId = `evt_ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const eventRef = doc(db, EVENTS_COLLECTION, eventId);
   const path = `${EVENTS_COLLECTION}/${eventId}`;
 
-  // Determine status: "available" only if ticketUrl or notes clearly indicate tickets on sale, otherwise "not_open"
-  const notesLower = (draft.notes || '').toLowerCase();
-  const ticketAvailableHint = Boolean(draft.ticketUrl) || notesLower.includes('sale') || notesLower.includes('available') || notesLower.includes('buy');
-  const status: EventStatus = ticketAvailableHint ? 'available' : 'not_open';
+  // firestore.rules reject null for optional fields.
+  // Build the event object without optional keys when empty (promoterId, ticketUrl, igPostUrl, posterUrl, sourceUrl omitted).
+  const cleanTitle = draft.title.trim().slice(0, 120);
+  const cleanArtists = draft.artists.map((a) => a.trim()).filter(Boolean).slice(0, 20);
 
-  // Parse startAt ISO string to Firestore Timestamp
-  const startDate = new Date(draft.startAt);
-  const startTimestamp = Timestamp.fromDate(isNaN(startDate.getTime()) ? new Date() : startDate);
+  const eventPayload: Record<string, any> = {
+    title: cleanTitle,
+    artists: cleanArtists.length > 0 ? cleanArtists : [cleanTitle || 'Indie Artist'],
+    venueId: draft.matchedVenueId,
+    startAt: startTimestamp,
+    priceText: (draft.priceText || 'Check ticket page').trim().slice(0, 60),
+    genres: draft.genres.map((g) => g.trim()).filter(Boolean).slice(0, 8),
+    status,
+    statusUpdatedAt: serverTimestamp(),
+    statusSource: 'admin',
+    origin: 'ai',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  // Only include optional keys if non-empty string, NEVER null
+  if (draft.ticketUrl && typeof draft.ticketUrl === 'string' && draft.ticketUrl.trim().length > 0) {
+    eventPayload.ticketUrl = draft.ticketUrl.trim().slice(0, 500);
+  }
+  if (draft.sourceUrl && typeof draft.sourceUrl === 'string' && draft.sourceUrl.trim().length > 0) {
+    eventPayload.sourceUrl = draft.sourceUrl.trim().slice(0, 500);
+  }
 
   try {
-    // 1. Create real event
-    await setDoc(eventRef, {
-      title: draft.title.trim(),
-      artists: draft.artists.map((a) => a.trim()).filter(Boolean),
-      venueId: draft.matchedVenueId,
-      promoterId: null,
-      startAt: startTimestamp,
-      priceText: (draft.priceText || 'Check ticket page').trim(),
-      genres: draft.genres.map((g) => g.trim()).filter(Boolean),
-      ticketUrl: draft.ticketUrl ? draft.ticketUrl.trim() : null,
-      igPostUrl: null,
-      posterUrl: null,
-      status,
-      statusUpdatedAt: serverTimestamp(),
-      statusSource: 'admin',
-      origin: 'ai',
-      sourceUrl: draft.sourceUrl ? draft.sourceUrl.trim() : null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    // 1. Create real event in Firestore
+    await setDoc(eventRef, eventPayload);
 
-    // 2. Delete or mark draft approved
+    // 2. Delete approved draft
     await deleteEventDraft(draft.id);
 
     return eventId;

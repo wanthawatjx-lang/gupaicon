@@ -368,6 +368,7 @@ export default function App() {
             onSelectEvent={(evt) => setSelectedEvent(evt)}
             onClearFilters={handleClearFilters}
             lang={lang}
+            user={user}
           />
         ) : (
           <ListView

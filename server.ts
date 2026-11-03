@@ -2,7 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
 import { Type } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
@@ -48,6 +48,57 @@ interface RateLimitRecord {
 }
 const ipRateLimits = new Map<string, RateLimitRecord>();
 const ipDiscoverLimits = new Map<string, RateLimitRecord>();
+const userPreviewLimits = new Map<string, RateLimitRecord>();
+
+// Server-wide daily Gemini preview calls tracker (max 200/day)
+let serverDailyPreviewCalls = 0;
+let serverDailyPreviewDay = new Date().toISOString().slice(0, 10);
+
+function getDailyPreviewCalls(): number {
+  const currentDay = new Date().toISOString().slice(0, 10);
+  if (serverDailyPreviewDay !== currentDay) {
+    serverDailyPreviewDay = currentDay;
+    serverDailyPreviewCalls = 0;
+  }
+  return serverDailyPreviewCalls;
+}
+
+function incrementDailyPreviewCalls(): void {
+  getDailyPreviewCalls();
+  serverDailyPreviewCalls++;
+}
+
+// Accepts startAt only if ISO 8601 with an explicit offset; if no offset, treats as Asia/Bangkok (+07:00)
+function parseAndNormalizeDiscoverDate(rawStartAt: any): { date: Date; isoBangkok: string } | null {
+  if (!rawStartAt || typeof rawStartAt !== 'string') return null;
+  const s = rawStartAt.trim();
+
+  // Check if it has an explicit offset (Z, +HH:MM, -HH:MM, +HHMM, -HHMM)
+  const hasOffset = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(s);
+
+  let targetStr = s;
+  if (!hasOffset) {
+    // If there is no offset, treat it as Asia/Bangkok (+07:00)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      targetStr = `${s}T20:00:00+07:00`;
+    } else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?$/.test(s)) {
+      targetStr = `${s.replace(' ', 'T')}+07:00`;
+    } else {
+      return null;
+    }
+  } else {
+    // Must be valid ISO 8601 with offset
+    if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(s)) {
+      return null;
+    }
+    targetStr = s.replace(' ', 'T');
+  }
+
+  const date = new Date(targetStr);
+  if (isNaN(date.getTime())) return null;
+
+  return { date, isoBangkok: targetStr };
+}
 
 function checkRateLimit(
   map: Map<string, RateLimitRecord>,
@@ -76,6 +127,9 @@ setInterval(() => {
   }
   for (const [ip, record] of ipDiscoverLimits.entries()) {
     if (now > record.resetAt) ipDiscoverLimits.delete(ip);
+  }
+  for (const [userId, record] of userPreviewLimits.entries()) {
+    if (now > record.resetAt) userPreviewLimits.delete(userId);
   }
 }, 60000);
 
@@ -258,8 +312,10 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
 
             if (cleanTitle.length === 0 || cleanVenueName.length === 0) continue;
 
-            const startDate = new Date(raw.startAt);
-            if (isNaN(startDate.getTime()) || startDate < now || startDate > maxDate) {
+            const parsedDate = parseAndNormalizeDiscoverDate(raw.startAt);
+            if (!parsedDate) continue;
+            const startDate = parsedDate.date;
+            if (startDate < now || startDate > maxDate) {
               continue;
             }
 
@@ -331,7 +387,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
               artists: cleanArtists,
               venueName: cleanVenueName,
               promoterName: raw.promoterName ? String(raw.promoterName).trim().slice(0, 100) : null,
-              startAt: raw.startAt,
+              startAt: parsedDate.isoBangkok,
               priceText: raw.priceText ? String(raw.priceText).trim().slice(0, 60) : null,
               genres: cleanGenres,
               ticketUrl: cleanTicketUrl,
@@ -374,45 +430,137 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
     }
   });
 
-  // In-memory cache for event previews (2 hours TTL)
+  // In-memory cache for event previews (24 hours TTL)
   const previewCache = new Map<string, { data: any; expiresAt: number }>();
 
   // POST /api/event-preview - AI-Powered Event & Venue Vibe Breakdown using geminiClient
   app.post('/api/event-preview', async (req, res) => {
-    const cleanLang: 'en' | 'th' = req.body?.lang === 'en' ? 'en' : 'th';
-    try {
-      const { title, artists, venueName, genres, startAt } = req.body || {};
+    // 1. Require a signed-in user via Firebase ID token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required' });
+    }
+    const token = authHeader.split('Bearer ')[1]?.trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized: Sign in required' });
+    }
 
-      if (!title || typeof title !== 'string') {
-        return res.status(400).json({ error: 'Event title is required.' });
+    let decodedUser: DecodedIdToken;
+    try {
+      decodedUser = await adminAuth.verifyIdToken(token);
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    // 2. Client sends only { eventId, lang }
+    const { eventId, lang } = req.body || {};
+    if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+      return res.status(400).json({ error: 'Invalid eventId' });
+    }
+    if (lang !== 'th' && lang !== 'en') {
+      return res.status(400).json({ error: 'Language must be "th" or "en"' });
+    }
+    const cleanLang: 'th' | 'en' = lang;
+    const cleanEventId = eventId.trim();
+
+    // 3. User limit: 10 previews per hour
+    const userId = decodedUser.uid;
+    if (!checkRateLimit(userPreviewLimits, userId, 10, 3600000)) {
+      return res.status(429).json({
+        error:
+          cleanLang === 'en'
+            ? 'You have reached your limit of 10 AI previews per hour. Please try again later.'
+            : 'คุณใช้งานพรีวิวครบโควตา 10 ครั้งต่อชั่วโมงแล้ว กรุณาลองใหม่อีกครั้งในภายหลัง',
+        code: 'USER_HOURLY_LIMIT_EXCEEDED',
+      });
+    }
+
+    // 4. Cache check: 24 hours TTL by eventId + lang
+    const cacheKey = `${cleanEventId}_${cleanLang}`;
+    const cached = previewCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return res.json({ success: true, preview: cached.data, cached: true });
+    }
+
+    try {
+      // 5. Read event and its venue name from Firestore itself
+      const eventDoc = await db.collection('events').doc(cleanEventId).get();
+      if (!eventDoc.exists) {
+        return res.status(404).json({
+          error: cleanLang === 'en' ? 'Event not found' : 'ไม่พบข้อมูลคอนเสิร์ตนี้',
+        });
+      }
+      const eventData = eventDoc.data() as any;
+
+      let startMs: number | null = null;
+      if (eventData.startAt?.toMillis) {
+        startMs = eventData.startAt.toMillis();
+      } else if (eventData.startAt?.toDate) {
+        startMs = eventData.startAt.toDate().getTime();
+      } else if (typeof eventData.startAt === 'string') {
+        startMs = new Date(eventData.startAt).getTime();
+      }
+
+      if (!startMs || isNaN(startMs) || startMs < Date.now()) {
+        return res.status(404).json({
+          error:
+            cleanLang === 'en'
+              ? 'Event is in the past or not found'
+              : 'คอนเสิร์ตนี้ผ่านไปแล้วหรือไม่พบข้อมูล',
+        });
+      }
+
+      let venueName = 'Bangkok Livehouse';
+      if (eventData.venueId) {
+        try {
+          const venueDoc = await db.collection('venues').doc(eventData.venueId).get();
+          if (venueDoc.exists && venueDoc.data()?.name) {
+            venueName = venueDoc.data()!.name;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 6. Check server daily limit: 200 Gemini preview calls per day
+      if (getDailyPreviewCalls() >= 200) {
+        return res.status(429).json({
+          error:
+            cleanLang === 'en'
+              ? 'Daily server limit for AI previews has been reached (200 calls/day). Please try again tomorrow.'
+              : 'โควตาพรีวิวคอนเสิร์ตประจำวันของระบบเต็มแล้ว (200 ครั้ง/วัน) กรุณาลองใหม่พรุ่งนี้',
+          code: 'DAILY_SERVER_LIMIT_EXCEEDED',
+        });
       }
 
       if (!ai.hasAvailableKey()) {
-        return res.status(503).json({ error: 'AI preview service is currently unavailable.' });
+        return res.status(503).json({
+          error:
+            cleanLang === 'en'
+              ? 'AI preview service is currently unavailable.'
+              : 'บริการ AI preview ยังไม่พร้อมใช้งาน',
+        });
       }
 
-      const cleanTitle = String(title).slice(0, 150).trim();
-      const cleanVenue = String(venueName || 'Bangkok Livehouse').slice(0, 100).trim();
-      const cleanArtists = Array.isArray(artists)
-        ? artists.slice(0, 10).map((a) => String(a).slice(0, 80)).join(', ')
+      incrementDailyPreviewCalls();
+
+      // Build prompt ONLY from stored fields (ignore any text supplied by client)
+      const cleanTitle = String(eventData.title || '').trim().slice(0, 150);
+      const cleanArtists = Array.isArray(eventData.artists)
+        ? eventData.artists.slice(0, 10).map((a: any) => String(a).slice(0, 80)).join(', ')
         : '';
-      const cleanGenres = Array.isArray(genres)
-        ? genres.slice(0, 5).map((g) => String(g).slice(0, 40)).join(', ')
+      const cleanGenres = Array.isArray(eventData.genres)
+        ? eventData.genres.slice(0, 5).map((g: any) => String(g).slice(0, 40)).join(', ')
         : 'Indie';
-
-      const cacheKey = `${cleanTitle}_${cleanVenue}_${cleanLang}`.toLowerCase().replace(/\s+/g, '_');
-      const cached = previewCache.get(cacheKey);
-      if (cached && Date.now() < cached.expiresAt) {
-        return res.json({ success: true, preview: cached.data, cached: true });
-      }
+      const formattedDate = new Date(startMs).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
 
       const prompt = `You are a Bangkok indie music scene curator and gig expert for the 'gupaicon (กูไปคอน)' app.
 Generate an engaging, concise concert vibe preview for this show:
 - Event: "${cleanTitle}"
 - Artists: ${cleanArtists || 'Various Indie Artists'}
-- Venue: ${cleanVenue}
+- Venue: ${venueName}
 - Genres: ${cleanGenres}
-- Date/Time: ${startAt || 'Upcoming'}
+- Date/Time: ${formattedDate}
 
 Language: ${cleanLang === 'th' ? 'Thai (ภาษาไทย, โทนคอดนตรีอินดี้ ชวนตื่นเต้น เป็นกันเอง สั้นกระชับ)' : 'English (authentic indie gig guide style, punchy & concise)'}.
 Provide:
@@ -465,16 +613,16 @@ Provide:
         };
       }
 
-      previewCache.set(cacheKey, { data: previewData, expiresAt: Date.now() + 7200000 });
+      // Cache 24 hours
+      previewCache.set(cacheKey, { data: previewData, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
       return res.json({ success: true, preview: previewData });
     } catch (err: any) {
-      console.warn('[EventPreview] Generation error handled:', err?.message || 'Error');
       if (err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
         return res.status(429).json({
           error:
             cleanLang === 'en'
               ? 'All Gemini API keys are currently rate-limited (HTTP 429). Please wait a moment before retrying.'
-              : 'โควตา Gemini API กำลังติด Rate Limit (429) ทุกคีย์ กรุณารอสักครู่แล้วกดลองใหม่',
+              : 'โควตา Gemini API กำลังติด Rate Limit (429) กรุณารอสักครู่แล้วกดลองใหม่',
           code: 'ALL_KEYS_RATE_LIMITED',
         });
       }

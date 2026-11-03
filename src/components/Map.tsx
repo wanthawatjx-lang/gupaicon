@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { RotateCcw, Sparkles, Calendar, Ticket, ChevronRight, X, AlertCircle, RefreshCw } from 'lucide-react';
+import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth } from '../firebase';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
 import { getVenueUrgentStatus, getStatusLabel, getStatusSymbol } from '../utils/statusUtils';
@@ -33,6 +35,7 @@ interface MapProps {
   onSelectEvent?: (event: ConcertEvent) => void;
   onClearFilters?: () => void;
   lang?: Language;
+  user?: User | null;
 }
 
 export const Map: React.FC<MapProps> = ({
@@ -43,6 +46,7 @@ export const Map: React.FC<MapProps> = ({
   onSelectEvent,
   onClearFilters,
   lang = 'th',
+  user = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -74,19 +78,19 @@ export const Map: React.FC<MapProps> = ({
 
   // Fetch AI Event Vibe preview using the server-side geminiClient route
   const handleFetchAiPreview = async (event: ConcertEvent) => {
+    if (!user) return;
     setIsLoadingAi(true);
     setAiError(null);
     try {
-      const venue = venues.find((v) => v.id === event.venueId);
+      const idToken = await user.getIdToken();
       const res = await fetch('/api/event-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
-          title: event.title,
-          artists: event.artists,
-          venueName: venue?.name || 'Livehouse',
-          genres: event.genres,
-          startAt: event.startAt,
+          eventId: event.id,
           lang,
         }),
       });
@@ -440,7 +444,25 @@ export const Map: React.FC<MapProps> = ({
                 </div>
 
                 {/* AI Vibe Check Section */}
-                {aiPreview ? (
+                {!user ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const provider = new GoogleAuthProvider();
+                        await signInWithPopup(auth, provider);
+                      } catch (err) {
+                        console.error('Sign in failed:', err);
+                      }
+                    }}
+                    className="mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium border border-neutral-700/80 transition-all cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-lime-400" />
+                    <span className="text-[11px]">
+                      {lang === 'th' ? 'เข้าสู่ระบบเพื่อดู AI preview' : 'Sign in to see the AI preview'}
+                    </span>
+                  </button>
+                ) : aiPreview ? (
                   <div className="mt-1 p-2 rounded-lg bg-neutral-950/80 border border-neutral-800 text-xs flex flex-col gap-1.5 animate-in fade-in">
                     <div className="flex items-center gap-1.5 text-lime-400 font-semibold text-[11px]">
                       <Sparkles className="w-3.5 h-3.5" />
