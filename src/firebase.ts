@@ -71,6 +71,28 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Handle stale or corrupted stored auth sessions
+if (typeof window !== 'undefined') {
+  auth.onAuthStateChanged(
+    async (currentUser) => {
+      if (currentUser) {
+        try {
+          await currentUser.getIdToken();
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('token-service-api') || msg.includes('auth/')) {
+            console.warn('Resetting invalid or stale auth session:', msg);
+            await signOut(auth).catch(() => {});
+          }
+        }
+      }
+    },
+    (error) => {
+      console.warn('Auth observer notice:', error);
+    }
+  );
+}
+
 // Test connection on boot
 async function testConnection() {
   try {
@@ -78,6 +100,8 @@ async function testConnection() {
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.warn('Firestore offline notice. Please check network/config.');
+    } else {
+      console.info('Initial Firestore connection probe:', error instanceof Error ? error.message : error);
     }
   }
 }
@@ -85,3 +109,4 @@ async function testConnection() {
 testConnection();
 
 export { signInWithPopup, signOut };
+

@@ -134,5 +134,339 @@ service cloud.firestore {
     match /eventDrafts/{draftId} {
       allow read, write: if isAdmin();
     }
+
+    // --- Community Profiles & Buddy Board Helper Functions ---
+
+    // Note on exists():
+    // exists(/databases/$(database)/documents/bans/$(request.auth.uid)) is strictly necessary
+    // to check user ban status during community creation/updates without leaking admin lists.
+    function isBanned() {
+      return isSignedIn() && exists(/databases/$(database)/documents/bans/$(request.auth.uid));
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['displayName', 'tag', 'avatarEmoji', 'favoriteGenres', 'ageConfirmed', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['displayName', 'tag', 'avatarEmoji', 'bio', 'favoriteGenres', 'ageConfirmed', 'createdAt', 'updatedAt'])
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 80
+        && !data.displayName.matches('.*@.*')
+        && !data.displayName.matches('.*(?i)https?://.*')
+        && !data.displayName.matches('.*(?i)www\\..*')
+        && data.tag is string && data.tag.matches('^[0-9]{4}$')
+        && data.avatarEmoji is string && data.avatarEmoji.size() <= 16
+        && (!('bio' in data) || (data.bio is string && data.bio.size() <= 350))
+        && data.favoriteGenres is list && data.favoriteGenres.size() <= 5
+        && data.ageConfirmed is bool && data.ageConfirmed == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBuddyPost(data) {
+      return data.keys().hasAll(['eventId', 'authorUid', 'authorName', 'kind', 'body', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['eventId', 'authorUid', 'authorName', 'avatarEmoji', 'kind', 'body', 'meetUpNote', 'status', 'createdAt', 'updatedAt'])
+        && data.eventId is string && isValidId(data.eventId)
+        && data.authorUid is string && isValidId(data.authorUid)
+        && data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 80
+        && (!('avatarEmoji' in data) || (data.avatarEmoji is string && data.avatarEmoji.size() <= 16))
+        && data.kind in ['looking_for_buddy', 'have_extra_ticket', 'need_ticket']
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 1500
+        && (!('meetUpNote' in data) || (data.meetUpNote is string && data.meetUpNote.size() <= 400))
+        && data.status in ['open', 'closed']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['authorUid', 'authorName', 'body', 'createdAt'])
+        && data.keys().hasOnly(['authorUid', 'authorName', 'body', 'createdAt'])
+        && data.authorUid is string && isValidId(data.authorUid)
+        && data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 80
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 900
+        && data.createdAt is timestamp;
+    }
+
+    function isValidContentReport(data) {
+      return data.keys().hasAll(['reporterUid', 'targetType', 'targetPath', 'reason', 'createdAt'])
+        && data.keys().hasOnly(['reporterUid', 'targetType', 'targetPath', 'chatId', 'excerpt', 'reason', 'createdAt'])
+        && data.reporterUid is string && isValidId(data.reporterUid)
+        && data.targetType in ['post', 'comment', 'chat']
+        && data.targetPath is string && data.targetPath.size() <= 200
+        && (!('chatId' in data) || (data.chatId is string && data.chatId.size() <= 260))
+        && (!('excerpt' in data) || (data.excerpt is string && data.excerpt.size() <= 12000))
+        && data.reason in ['spam', 'harassment', 'inappropriate', 'scalping', 'scam', 'other']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBan(data) {
+      return data.keys().hasAll(['uid', 'bannedAt'])
+        && data.keys().hasOnly(['uid', 'reason', 'bannedAt', 'bannedBy'])
+        && data.uid is string && isValidId(data.uid)
+        && (!('reason' in data) || (data.reason is string && data.reason.size() <= 200))
+        && data.bannedAt is timestamp;
+    }
+
+    // --- Private Messaging (DM) Helper Functions ---
+
+    function getOtherUid(members, myUid) {
+      return members[0] == myUid ? members[1] : members[0];
+    }
+
+    // Read cost: 1 exists() check
+    function isUserBlocked(uid, targetUid) {
+      return exists(/databases/$(database)/documents/profiles/$(uid)/blocks/$(targetUid));
+    }
+
+    // Read cost: 1 exists() check
+    function isTargetBanned(uid) {
+      return exists(/databases/$(database)/documents/bans/$(uid));
+    }
+
+    function getParentChat(chatId) {
+      return get(/databases/$(database)/documents/chats/$(chatId)).data;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['members', 'initiator', 'status', 'createdAt', 'lastMessageAt', 'lastMessagePreview', 'names'])
+        && data.keys().hasOnly(['members', 'initiator', 'status', 'createdAt', 'lastMessageAt', 'lastMessagePreview', 'names', 'hiddenBy', 'updatedAt'])
+        && data.members is list && data.members.size() == 2
+        && data.members[0] is string && isValidId(data.members[0])
+        && data.members[1] is string && isValidId(data.members[1])
+        && data.members[0] != data.members[1]
+        && request.auth.uid in data.members
+        && data.initiator in data.members
+        && data.status in ['pending', 'accepted', 'declined']
+        && data.createdAt is timestamp
+        && data.lastMessageAt is timestamp
+        && data.lastMessagePreview is string && data.lastMessagePreview.size() <= 80
+        && data.names is map && data.names.keys().hasAll(data.members) && data.names.keys().hasOnly(data.members)
+        && data.names[data.members[0]] is string && data.names[data.members[0]].size() >= 2 && data.names[data.members[0]].size() <= 80
+        && data.names[data.members[1]] is string && data.names[data.members[1]].size() >= 2 && data.names[data.members[1]].size() <= 80
+        && (!('hiddenBy' in data) || (data.hiddenBy is list && data.hiddenBy.size() <= 2))
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['senderUid', 'text', 'createdAt'])
+        && data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
+        && data.senderUid == request.auth.uid
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 1000
+        && data.createdAt == request.time;
+    }
+
+    // 7. Community Profiles: Readable only by signed-in users (no email/photo stored)
+    match /profiles/{uid} {
+      allow read: if isSignedIn() && isValidId(uid);
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && !isBanned()
+        && isValidId(uid)
+        && isValidProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && !isBanned()
+        && isValidId(uid)
+        && isValidProfile(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().tag == existing().tag
+        && incoming().updatedAt == request.time;
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // Blocklist subcollection: profiles/{myUid}/blocks/{otherUid}
+      match /blocks/{otherUid} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == uid
+          && isValidId(otherUid)
+          && otherUid != uid
+          && incoming().keys().hasAll(['createdAt'])
+          && incoming().keys().hasOnly(['createdAt'])
+          && incoming().createdAt == request.time;
+        allow delete: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // 8. Buddy Posts: Public read; 1 post per user per event enforced by doc ID = {eventId}_{authorUid}
+    match /buddyPosts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && !isBanned()
+        && request.auth.uid == incoming().authorUid
+        && postId == incoming().eventId + '_' + request.auth.uid
+        && isValidBuddyPost(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isSignedIn()
+        && !isBanned()
+        && request.auth.uid == existing().authorUid
+        && request.auth.uid == incoming().authorUid
+        && incoming().eventId == existing().eventId
+        && incoming().createdAt == existing().createdAt
+        && isValidBuddyPost(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if isSignedIn() && (request.auth.uid == existing().authorUid || isAdmin());
+
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && !isBanned()
+          && request.auth.uid == incoming().authorUid
+          && isValidId(commentId)
+          && isValidComment(incoming())
+          && incoming().createdAt == request.time;
+        allow delete: if isSignedIn() && (request.auth.uid == existing().authorUid || isAdmin());
+      }
+    }
+
+    // 9. Content Moderation Reports: Signed-in users create; Admin read/delete
+    match /contentReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && !isBanned()
+        && request.auth.uid == incoming().reporterUid
+        && isValidId(reportId)
+        && isValidContentReport(incoming())
+        && incoming().createdAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // 10. User Bans: Admin write; users can only read their own ban status
+    match /bans/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin() && isValidId(uid) && isValidBan(incoming());
+    }
+
+    // 11. Direct Message Chats: Private communication between two signed-in users
+    match /chats/{chatId} {
+      // Read cost: 0 extra lookups; evaluates membership directly on the chat document
+      allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
+
+      // Creation read cost:
+      // 1 get() on caller's profile to verify ageConfirmed == true (1 read)
+      // 1 exists() to check caller ban status via isBanned() (1 read)
+      // 1 exists() to check recipient profile existence (1 read)
+      // 1 exists() to check recipient ban status (1 read)
+      // 1 exists() to check recipient blocks caller (1 read)
+      // 1 exists() to check caller blocks recipient (1 read)
+      // Total: 6 lookups, evaluated once per newly initiated chat.
+      allow create: if isSignedIn()
+        && !isBanned()
+        && isValidChat(incoming())
+        && incoming().status == 'pending'
+        && incoming().initiator == request.auth.uid
+        && chatId == incoming().members[0] + '_' + incoming().members[1]
+        && incoming().createdAt == request.time
+        && incoming().lastMessageAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.ageConfirmed == true
+        && exists(/databases/$(database)/documents/profiles/$(getOtherUid(incoming().members, request.auth.uid)))
+        && !isTargetBanned(getOtherUid(incoming().members, request.auth.uid))
+        && !isUserBlocked(getOtherUid(incoming().members, request.auth.uid), request.auth.uid)
+        && !isUserBlocked(request.auth.uid, getOtherUid(incoming().members, request.auth.uid));
+
+      // Update read cost:
+      // - Status / Message update: 3 lookups (1 isTargetBanned, 2 isUserBlocked).
+      // - Delete for me (hide): 0 extra document lookups.
+      allow update: if isSignedIn()
+        && !isBanned()
+        && request.auth.uid in existing().members
+        && (
+          // Action 1: Accept or Decline by recipient (non-initiator)
+          (
+            request.auth.uid != existing().initiator
+            && existing().status == 'pending'
+            && incoming().status in ['accepted', 'declined']
+            && incoming().members == existing().members
+            && incoming().initiator == existing().initiator
+            && incoming().createdAt == existing().createdAt
+            && incoming().lastMessageAt == existing().lastMessageAt
+            && incoming().lastMessagePreview == existing().lastMessagePreview
+            && incoming().names == existing().names
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+            && !isTargetBanned(getOtherUid(existing().members, request.auth.uid))
+            && !isUserBlocked(getOtherUid(existing().members, request.auth.uid), request.auth.uid)
+            && !isUserBlocked(request.auth.uid, getOtherUid(existing().members, request.auth.uid))
+          )
+          ||
+          // Action 2: Update last message info on message send
+          (
+            (
+              (existing().status == 'pending' && request.auth.uid == existing().initiator)
+              || (existing().status == 'accepted')
+            )
+            && incoming().status == existing().status
+            && incoming().members == existing().members
+            && incoming().initiator == existing().initiator
+            && incoming().createdAt == existing().createdAt
+            && incoming().names == existing().names
+            && incoming().lastMessageAt == request.time
+            && incoming().lastMessagePreview is string
+            && incoming().lastMessagePreview.size() <= 80
+            && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt', 'lastMessagePreview', 'updatedAt', 'hiddenBy'])
+            && !isTargetBanned(getOtherUid(existing().members, request.auth.uid))
+            && !isUserBlocked(getOtherUid(existing().members, request.auth.uid), request.auth.uid)
+            && !isUserBlocked(request.auth.uid, getOtherUid(existing().members, request.auth.uid))
+          )
+          ||
+          // Action 3: Delete chat for me (hide from list)
+          (
+            incoming().status == existing().status
+            && incoming().members == existing().members
+            && incoming().initiator == existing().initiator
+            && incoming().createdAt == existing().createdAt
+            && incoming().names == existing().names
+            && incoming().diff(existing()).affectedKeys().hasOnly(['hiddenBy'])
+            && incoming().hiddenBy is list && incoming().hiddenBy.size() <= 2
+          )
+        );
+
+      allow delete: if false;
+
+      // Messages Subcollection: chats/{chatId}/messages/{messageId}
+      match /messages/{messageId} {
+        // Read cost: 1 get() on parent chat to verify caller is a member.
+        // Cached by rules evaluator across documents in query.
+        allow read: if isSignedIn()
+          && request.auth.uid in getParentChat(chatId).members;
+
+        // Creation read cost:
+        // 1 get() on parent chat for status and member verification (1 read)
+        // 1 exists() to check caller ban status via !isBanned() (1 read)
+        // 1 exists() for other member ban check (1 read)
+        // 1 exists() for other member block check (1 read)
+        // 1 exists() for caller block check (1 read)
+        // Total: 5 lookups.
+        allow create: if isSignedIn()
+          && !isBanned()
+          && isValidChatMessage(incoming())
+          && request.auth.uid in getParentChat(chatId).members
+          && !isTargetBanned(getOtherUid(getParentChat(chatId).members, request.auth.uid))
+          && !isUserBlocked(getOtherUid(getParentChat(chatId).members, request.auth.uid), request.auth.uid)
+          && !isUserBlocked(request.auth.uid, getOtherUid(getParentChat(chatId).members, request.auth.uid))
+          && (
+            (getParentChat(chatId).status == 'pending' && request.auth.uid == getParentChat(chatId).initiator && messageId == 'first')
+            || (getParentChat(chatId).status == 'accepted' && isValidId(messageId))
+          );
+
+        // Sender can delete their own message
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.senderUid;
+        allow update: if false;
+      }
+
+      // Per-user lastReadAt Subcollection: chats/{chatId}/reads/{uid}
+      match /reads/{uid} {
+        // Read cost: 0 extra document lookups
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == uid
+          && incoming().keys().hasAll(['lastReadAt'])
+          && incoming().keys().hasOnly(['lastReadAt'])
+          && incoming().lastReadAt is timestamp;
+        allow delete: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
   }
 }

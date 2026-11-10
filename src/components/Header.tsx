@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Radio, List, Globe } from 'lucide-react';
+import { Shield, Radio, List, Globe, Users, MessageSquare } from 'lucide-react';
 import { Language, translations } from '../i18n/translations';
 
 interface HeaderProps {
@@ -11,6 +11,12 @@ interface HeaderProps {
   onToggleList: () => void;
   isListOpen: boolean;
   isAdminSignedIn?: boolean;
+  onOpenBuddies?: () => void;
+  onOpenProfile?: () => void;
+  onOpenMessages?: () => void;
+  hasUnreadMessages?: boolean;
+  profileEmoji?: string;
+  isSignedIn?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +28,12 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleList,
   isListOpen,
   isAdminSignedIn = false,
+  onOpenBuddies,
+  onOpenProfile,
+  onOpenMessages,
+  hasUnreadMessages = false,
+  profileEmoji,
+  isSignedIn = false,
 }) => {
   const t = translations[lang];
 
@@ -76,6 +88,47 @@ export const Header: React.FC<HeaderProps> = ({
             <List className="w-3.5 h-3.5" />
             <span>{venuesCount}</span>
           </button>
+
+          {/* Find a Concert Buddy Board Button */}
+          <button
+            type="button"
+            onClick={onOpenBuddies}
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-mono font-bold bg-neutral-950/90 text-neutral-200 hover:text-white border border-neutral-800/90 hover:border-lime-400 backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+            title={t.community.findBuddy}
+            aria-label={t.community.findBuddy}
+          >
+            <Users className="w-3.5 h-3.5 text-lime-400" />
+            <span className="hidden sm:inline">{lang === 'th' ? 'หาเพื่อน' : 'Buddies'}</span>
+          </button>
+
+          {/* Messages Button (DMs) */}
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={onOpenMessages}
+              className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-neutral-950/90 border border-neutral-800/90 hover:border-lime-400 text-neutral-200 hover:text-white text-sm backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+              title="Direct Messages (#/messages)"
+              aria-label="Direct Messages"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-lime-400" />
+              {hasUnreadMessages && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-lime-400 ring-2 ring-black animate-pulse" />
+              )}
+            </button>
+          )}
+
+          {/* User Profile Button */}
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              className="flex items-center justify-center w-8 h-8 rounded-xl bg-neutral-950/90 border border-neutral-800/90 hover:border-lime-400 text-sm backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+              title="My Profile (#/me)"
+              aria-label="My Profile"
+            >
+              <span>{profileEmoji || '👤'}</span>
+            </button>
+          )}
 
           {/* Admin Access Button (English UI) */}
           <button

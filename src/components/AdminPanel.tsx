@@ -30,11 +30,13 @@ import {
   Users,
   Sparkles,
   Upload,
+  ShieldCheck,
 } from 'lucide-react';
 import { EventReportsBadge } from './admin/EventReportsBadge';
 import { SourcesAdmin } from './admin/SourcesAdmin';
 import { AiReviewAdmin } from './admin/AiReviewAdmin';
 import { CsvImportAdmin } from './admin/CsvImportAdmin';
+import { ModerationTab } from './admin/ModerationTab';
 
 interface AdminPanelProps {
   user: User | null;
@@ -45,7 +47,7 @@ interface AdminPanelProps {
   editingVenueInitial?: Venue | null;
 }
 
-type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review' | 'import';
+type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review' | 'import' | 'moderation';
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   user,
@@ -633,6 +635,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>Import</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('moderation');
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    activeTab === 'moderation'
+                      ? 'bg-lime-400 text-black shadow-md'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Moderation</span>
                 </button>
               </div>
 
@@ -1508,6 +1526,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {/* ==================== TAB 6: IMPORT ==================== */}
               {activeTab === 'import' && <CsvImportAdmin onDataChanged={() => {}} />}
+              {activeTab === 'moderation' && <ModerationTab />}
             </div>
           )}
         </div>

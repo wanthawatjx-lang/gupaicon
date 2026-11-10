@@ -23,6 +23,13 @@ import { VenueListDrawer } from './components/VenueListDrawer';
 import { Footer } from './components/Footer';
 import { PrivacyPage } from './components/PrivacyPage';
 import { StatusBanners } from './components/StatusBanners';
+import { BuddyBoardPage } from './components/community/BuddyBoardPage';
+import { ProfilePage } from './components/community/ProfilePage';
+import { ChooseProfileModal } from './components/community/ChooseProfileModal';
+import { MessagesPage } from './components/chat/MessagesPage';
+import { StartChatModal } from './components/chat/StartChatModal';
+import { UserProfile } from './types/community';
+import { fetchUserProfile } from './services/communityService';
 import { normalizeStatus } from './utils/statusUtils';
 import { Language, getInitialLanguage, saveLanguagePreference, translations } from './i18n';
 import {
@@ -73,23 +80,64 @@ export default function App() {
   const [isListDrawerOpen, setIsListDrawerOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
 
+  // Community & Buddy Board navigation and state
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isBuddiesPageOpen, setIsBuddiesPageOpen] = useState(false);
+  const [isProfilePageOpen, setIsProfilePageOpen] = useState(false);
+
+  // Direct Messaging navigation and target state
+  const [isMessagesPageOpen, setIsMessagesPageOpen] = useState(false);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [startChatTarget, setStartChatTarget] = useState<{
+    targetUid: string;
+    targetName: string;
+    targetEmoji?: string;
+  } | null>(null);
+
   // Loading state & Firestore error tracking
   const [loadingVenues, setLoadingVenues] = useState(true);
   const [loadingPromoters, setLoadingPromoters] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [firestoreError, setFirestoreError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [authReady, setAuthReady] = useState(false);
 
-  // Monitor Auth State
+  // Monitor Auth State, fetch user profile, and prompt first-time profile creation
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+        setUser(currentUser);
+        setAuthReady(true);
+        if (currentUser) {
+          try {
+            const p = await fetchUserProfile(currentUser.uid);
+            setUserProfile(p);
+            // Prompt "Choose your name" on first sign-in if no profile exists
+            if (!p) {
+              setIsProfileModalOpen(true);
+            }
+          } catch (err) {
+            console.warn('Failed to load profile on auth:', err);
+          }
+        } else {
+          setUserProfile(null);
+        }
+      },
+      (error) => {
+        console.warn('Auth state error:', error);
+        setUser(null);
+        setUserProfile(null);
+        setAuthReady(true);
+      }
+    );
     return () => unsubscribe();
   }, []);
 
   // 1. Subscribe to Venues Collection
   useEffect(() => {
+    if (!authReady) return;
     setLoadingVenues(true);
     const unsubscribe = subscribeToVenues(
       (data) => {
@@ -102,10 +150,11 @@ export default function App() {
       }
     );
     return () => unsubscribe();
-  }, [retryKey]);
+  }, [authReady, retryKey]);
 
   // 2. Subscribe to Promoters Collection
   useEffect(() => {
+    if (!authReady) return;
     setLoadingPromoters(true);
     const unsubscribe = subscribeToPromoters(
       (data) => {
@@ -118,10 +167,11 @@ export default function App() {
       }
     );
     return () => unsubscribe();
-  }, [retryKey]);
+  }, [authReady, retryKey]);
 
   // 3. Subscribe to Events Collection (Bounded query with limit 80)
   useEffect(() => {
+    if (!authReady) return;
     setLoadingEvents(true);
     const unsubscribe = subscribeToEvents(
       (data) => {
@@ -134,7 +184,7 @@ export default function App() {
       }
     );
     return () => unsubscribe();
-  }, [retryKey]);
+  }, [authReady, retryKey]);
 
   // Active display collections: live Firestore data or seed samples fallback
   const activeVenues: Venue[] = venues.length > 0 ? venues : (sampleVenues as Venue[]);
@@ -159,6 +209,30 @@ export default function App() {
         setIsPrivacyOpen(true);
       } else {
         setIsPrivacyOpen(false);
+      }
+
+      if (hash === '#/buddies' || hash === '#buddies' || path === '/buddies') {
+        setIsBuddiesPageOpen(true);
+      } else {
+        setIsBuddiesPageOpen(false);
+      }
+
+      if (hash === '#/me' || hash === '#me' || path === '/me') {
+        setIsProfilePageOpen(true);
+      } else {
+        setIsProfilePageOpen(false);
+      }
+
+      if (hash.startsWith('#/messages') || path.startsWith('/messages')) {
+        setIsMessagesPageOpen(true);
+        // Extract optional chatId query parameter: #/messages?chatId=...
+        const queryIdx = hash.indexOf('chatId=');
+        if (queryIdx !== -1) {
+          const cid = hash.substring(queryIdx + 7).split('&')[0];
+          setActiveChatId(cid);
+        }
+      } else {
+        setIsMessagesPageOpen(false);
       }
 
       if (hash === '#/list' || hash === '#list') {
@@ -213,6 +287,18 @@ export default function App() {
     if (window.location.hash === '#/privacy' || window.location.hash === '#privacy') {
       window.location.hash = viewMode === 'list' ? '/list' : '';
     }
+  };
+
+  const handleStartChat = (targetUid: string, targetName: string, targetEmoji?: string) => {
+    if (!user) {
+      alert(lang === 'th' ? 'กรุณาเข้าสู่ระบบด้วย Google เพื่อส่งข้อความ' : 'Please sign in with Google to send messages');
+      return;
+    }
+    if (!userProfile || !userProfile.ageConfirmed) {
+      setIsProfileModalOpen(true);
+      return;
+    }
+    setStartChatTarget({ targetUid, targetName, targetEmoji });
   };
 
   const handleRetry = () => {
@@ -319,16 +405,20 @@ export default function App() {
     return activePromoters.find((p) => p.id === selectedEvent.promoterId);
   }, [selectedEvent, activePromoters]);
 
-  const selectedEventVenueName = useMemo(() => {
+  const selectedEventVenue = useMemo(() => {
     if (!selectedEvent) return undefined;
-    return activeVenues.find((v) => v.id === selectedEvent.venueId)?.name;
+    return activeVenues.find((v) => v.id === selectedEvent.venueId);
   }, [selectedEvent, activeVenues]);
+
+  const selectedEventVenueName = useMemo(() => {
+    return selectedEventVenue?.name;
+  }, [selectedEventVenue]);
 
   const t = translations[lang];
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black text-white select-none font-sans">
-      {/* Top Header with TH/EN Toggle and Admin Button */}
+      {/* Top Header with TH/EN Toggle, Buddies, Profile, and Admin Button */}
       <Header
         venuesCount={activeVenues.length}
         eventsCount={filteredEvents.length}
@@ -338,6 +428,24 @@ export default function App() {
         onToggleList={() => setIsListDrawerOpen(!isListDrawerOpen)}
         isListOpen={isListDrawerOpen}
         isAdminSignedIn={isAdmin}
+        onOpenBuddies={() => {
+          setIsBuddiesPageOpen(true);
+          window.location.hash = '/buddies';
+        }}
+        onOpenProfile={() => {
+          if (!userProfile) {
+            setIsProfileModalOpen(true);
+          } else {
+            setIsProfilePageOpen(true);
+            window.location.hash = '/me';
+          }
+        }}
+        onOpenMessages={() => {
+          setIsMessagesPageOpen(true);
+          window.location.hash = '/messages';
+        }}
+        profileEmoji={userProfile?.avatarEmoji}
+        isSignedIn={Boolean(user)}
       />
 
       {/* Filter Bar with Date, Tickets, Search & Genre marker filtering */}
@@ -422,12 +530,22 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Event Detail Sheet (Artists, Promoter link, Bangkok time, Buy tickets, View IG post) */}
+      {/* Event Detail Sheet (Artists, Promoter link, Bangkok time, Buy tickets, View IG post, Buddy section) */}
       <EventDetailSheet
         event={selectedEvent}
         promoter={selectedEventPromoter}
+        venue={selectedEventVenue}
         venueName={selectedEventVenueName}
         user={user}
+        profile={userProfile}
+        onProfileUpdated={setUserProfile}
+        onOpenBuddyBoard={() => {
+          setSelectedEvent(null);
+          setIsBuddiesPageOpen(true);
+          window.location.hash = '/buddies';
+        }}
+        onStartChat={handleStartChat}
+        isAdmin={isAdmin}
         onClose={() => {
           setSelectedEvent(null);
           if (window.location.hash.startsWith('#/event/')) {
@@ -472,6 +590,95 @@ export default function App() {
       {/* Privacy Policy Page Modal */}
       {isPrivacyOpen && (
         <PrivacyPage lang={lang} onBack={handleClosePrivacy} />
+      )}
+
+      {/* Buddy Board Page (#/buddies) */}
+      {isBuddiesPageOpen && (
+        <BuddyBoardPage
+          user={user}
+          profile={userProfile}
+          events={activeEvents}
+          onOpenEvent={(evtId) => {
+            const ev = activeEvents.find((e) => e.id === evtId);
+            if (ev) {
+              setSelectedEvent(ev);
+              setIsBuddiesPageOpen(false);
+              window.location.hash = `/event/${evtId}`;
+            }
+          }}
+          onBack={() => {
+            setIsBuddiesPageOpen(false);
+            window.location.hash = viewMode === 'list' ? '/list' : '';
+          }}
+          onRequestProfile={() => setIsProfileModalOpen(true)}
+          onStartChat={handleStartChat}
+          lang={lang}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* Profile Page (#/me) */}
+      {isProfilePageOpen && user && (
+        <ProfilePage
+          user={user}
+          profile={userProfile}
+          onProfileUpdated={setUserProfile}
+          onBack={() => {
+            setIsProfilePageOpen(false);
+            window.location.hash = viewMode === 'list' ? '/list' : '';
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* Direct Messages Page (#/messages) */}
+      {isMessagesPageOpen && (
+        <MessagesPage
+          user={user}
+          userProfile={userProfile}
+          lang={lang}
+          initialChatId={activeChatId}
+          onBackToMap={() => {
+            setIsMessagesPageOpen(false);
+            setActiveChatId(null);
+            window.location.hash = viewMode === 'list' ? '/list' : '';
+          }}
+          onOpenProfileSetup={() => setIsProfileModalOpen(true)}
+        />
+      )}
+
+      {/* Start Chat Request Modal */}
+      {startChatTarget && userProfile && (
+        <StartChatModal
+          isOpen={Boolean(startChatTarget)}
+          onClose={() => setStartChatTarget(null)}
+          callerProfile={userProfile}
+          targetUid={startChatTarget.targetUid}
+          targetName={startChatTarget.targetName}
+          targetEmoji={startChatTarget.targetEmoji}
+          lang={lang}
+          onChatStarted={(cid) => {
+            setActiveChatId(cid);
+            setIsMessagesPageOpen(true);
+            window.location.hash = `#/messages?chatId=${cid}`;
+            setStartChatTarget(null);
+          }}
+        />
+      )}
+
+      {/* Initial / Prompted "Choose your name" Modal */}
+      {isProfileModalOpen && user && (
+        <ChooseProfileModal
+          user={user}
+          existingProfile={userProfile}
+          isOpen={true}
+          onClose={() => setIsProfileModalOpen(false)}
+          onProfileSaved={(p) => {
+            setUserProfile(p);
+            setIsProfileModalOpen(false);
+          }}
+          lang={lang}
+        />
       )}
 
       {/* Admin Panel (English console strictly restricted to wanthawatjx@gmail.com) */}

@@ -220,6 +220,190 @@
         "status",
         "createdAt"
       ]
+    },
+    "profile": {
+      "title": "Community Profile",
+      "description": "Public community profile for signed-in users (no email, no photo)",
+      "type": "object",
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 24,
+          "description": "Chosen community name"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "description": "Four random digits"
+        },
+        "avatarEmoji": {
+          "type": "string",
+          "description": "Chosen avatar emoji"
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 140,
+          "description": "Optional short bio"
+        },
+        "favoriteGenres": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Favorite music genres up to 5"
+        },
+        "ageConfirmed": {
+          "type": "boolean",
+          "description": "Age confirmation 18+ or parental consent"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["displayName", "tag", "avatarEmoji", "favoriteGenres", "ageConfirmed", "createdAt", "updatedAt"]
+    },
+    "buddyPost": {
+      "title": "Concert Buddy Post",
+      "description": "Public post to find concert companions or share tickets",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "authorUid": {
+          "type": "string"
+        },
+        "authorName": {
+          "type": "string"
+        },
+        "avatarEmoji": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["looking_for_buddy", "have_extra_ticket", "need_ticket"]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "meetUpNote": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "closed"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["eventId", "authorUid", "authorName", "kind", "body", "status", "createdAt", "updatedAt"]
+    },
+    "comment": {
+      "title": "Buddy Post Comment",
+      "description": "Comment under a buddy post",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "body": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "body", "createdAt"]
+    },
+    "contentReport": {
+      "title": "Content Moderation Report",
+      "description": "Report of inappropriate content by signed-in users",
+      "type": "object",
+      "properties": {
+        "reporterUid": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["post", "comment", "chat"] },
+        "targetPath": { "type": "string" },
+        "chatId": { "type": "string" },
+        "excerpt": { "type": "string", "maxLength": 12000 },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterUid", "targetType", "targetPath", "reason", "createdAt"]
+    },
+    "chat": {
+      "title": "Direct Message Chat",
+      "description": "Private conversation between two signed-in users",
+      "type": "object",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of two sorted member UIDs"
+        },
+        "initiator": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "declined"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "lastMessagePreview": { "type": "string", "maxLength": 80 },
+        "names": { "type": "object" },
+        "hiddenBy": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "members",
+        "initiator",
+        "status",
+        "createdAt",
+        "lastMessageAt",
+        "lastMessagePreview",
+        "names"
+      ]
+    },
+    "chatMessage": {
+      "title": "Direct Message Item",
+      "description": "Individual message inside a direct chat",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "text", "createdAt"]
+    },
+    "chatRead": {
+      "title": "Chat Read Status",
+      "description": "Last read timestamp for a user in a chat",
+      "type": "object",
+      "properties": {
+        "lastReadAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["lastReadAt"]
+    },
+    "ban": {
+      "title": "User Ban",
+      "description": "Banned user entry",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "reason": { "type": "string" },
+        "bannedAt": { "type": "string", "format": "date-time" },
+        "bannedBy": { "type": "string" }
+      },
+      "required": ["uid", "bannedAt"]
     }
   },
   "firestore": {
@@ -238,6 +422,42 @@
     "/events/{eventId}/reports/{uid}": {
       "schema": "report",
       "description": "Subcollection of crowd-reported ticket statuses by user UID"
+    },
+    "/profiles/{uid}": {
+      "schema": "profile",
+      "description": "Community user profiles, readable only by signed-in users"
+    },
+    "/profiles/{uid}/blocks/{otherUid}": {
+      "schema": "object",
+      "description": "User blocklist subcollection"
+    },
+    "/buddyPosts/{postId}": {
+      "schema": "buddyPost",
+      "description": "Public concert buddy posts"
+    },
+    "/buddyPosts/{postId}/comments/{commentId}": {
+      "schema": "comment",
+      "description": "Comments on concert buddy posts"
+    },
+    "/contentReports/{reportId}": {
+      "schema": "contentReport",
+      "description": "Reports submitted for moderation"
+    },
+    "/bans/{uid}": {
+      "schema": "ban",
+      "description": "Banned users restricted from posting or commenting"
+    },
+    "/chats/{chatId}": {
+      "schema": "chat",
+      "description": "Direct message chat documents between two users"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "chatMessage",
+      "description": "Messages inside a direct message chat"
+    },
+    "/chats/{chatId}/reads/{uid}": {
+      "schema": "chatRead",
+      "description": "Per-user last read timestamp tracking for unread dots"
     }
   }
 }

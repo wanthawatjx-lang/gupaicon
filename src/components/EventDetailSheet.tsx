@@ -3,11 +3,19 @@ import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase';
 import { ConcertEvent, CrowdReport, CrowdReportStatus } from '../types/event';
 import { Promoter } from '../types/promoter';
+import { Venue } from '../types/venue';
 import { STATUS_MAP } from '../utils/statusUtils';
 import { computeDisplayedStatus } from '../utils/crowdStatusLogic';
 import { subscribeToEventReports, submitCrowdReport } from '../services/reportService';
-import { formatBangkokDateTime, formatRelativeTime } from '../utils/dateUtils';
+import { formatBangkokDateTime, formatRelativeTime, parseTimestampToDate } from '../utils/dateUtils';
+import { buildIcs, buildGoogleCalendarUrl, buildIcsFileName, triggerIcsDownload } from '../utils/calendar';
 import { Language, translations } from '../i18n';
+import { BuddyPost, UserProfile } from '../types/community';
+import { fetchEventBuddyPosts, fetchBlockedUids, blockUser } from '../services/communityService';
+import { BuddyPostCard } from './community/BuddyPostCard';
+import { CreatePostModal } from './community/CreatePostModal';
+import { ChooseProfileModal } from './community/ChooseProfileModal';
+import { ReportModal } from './community/ReportModal';
 import {
   Calendar,
   Ticket,
@@ -30,20 +38,32 @@ interface EventDetailSheetProps {
   event: ConcertEvent | null;
   promoter?: Promoter;
   venueName?: string;
+  venue?: Venue;
   user: User | null;
+  profile?: UserProfile | null;
+  onProfileUpdated?: (p: UserProfile | null) => void;
+  onOpenBuddyBoard?: () => void;
+  onStartChat?: (targetUid: string, targetName: string, targetEmoji?: string) => void;
   onClose: () => void;
   onOpenVenue?: () => void;
   lang: Language;
+  isAdmin?: boolean;
 }
 
 export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   event,
   promoter,
   venueName,
+  venue,
   user,
+  profile,
+  onProfileUpdated,
+  onOpenBuddyBoard,
+  onStartChat,
   onClose,
   onOpenVenue,
   lang,
+  isAdmin,
 }) => {
   const [reports, setReports] = useState<CrowdReport[]>([]);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -60,13 +80,71 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Calendar states (RFC 5545 iCalendar & Google Calendar)
+  const [downloadIcsUrl, setDownloadIcsUrl] = useState<string | null>(null);
+  const [downloadIcsFilename, setDownloadIcsFilename] = useState<string>('event.ics');
+  const [calendarDownloadedNotice, setCalendarDownloadedNotice] = useState(false);
+
+  // Buddy Posts states (Going Together section, max 10 open posts)
+  const [buddyPosts, setBuddyPosts] = useState<BuddyPost[]>([]);
+  const [loadingBuddyPosts, setLoadingBuddyPosts] = useState(false);
+  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+  const [isChooseProfileOpen, setIsChooseProfileOpen] = useState(false);
+  const [blockedUids, setBlockedUids] = useState<string[]>([]);
+  const [reportTarget, setReportTarget] = useState<{
+    targetType: 'post' | 'comment';
+    targetPath: string;
+  } | null>(null);
+
   const t = translations[lang];
 
-  // Reset AI preview when event changes
+  // Reset AI preview & revoke calendar URL when event changes
   useEffect(() => {
     setAiPreview(null);
     setAiError(null);
+    if (downloadIcsUrl) {
+      try {
+        URL.revokeObjectURL(downloadIcsUrl);
+      } catch {}
+      setDownloadIcsUrl(null);
+    }
+    setCalendarDownloadedNotice(false);
+    if (event?.id) {
+      loadEventBuddyPosts();
+    } else {
+      setBuddyPosts([]);
+    }
   }, [event?.id]);
+
+  const loadEventBuddyPosts = async () => {
+    if (!event?.id) return;
+    setLoadingBuddyPosts(true);
+    try {
+      const list = await fetchEventBuddyPosts(event.id, 10);
+      setBuddyPosts(list);
+    } catch (err) {
+      console.error('Failed to load event buddy posts:', err);
+    } finally {
+      setLoadingBuddyPosts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.uid) {
+      fetchBlockedUids(user.uid).then(setBlockedUids).catch(() => {});
+    }
+  }, [user?.uid]);
+
+  // Clean up object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (downloadIcsUrl) {
+        try {
+          URL.revokeObjectURL(downloadIcsUrl);
+        } catch {}
+      }
+    };
+  }, [downloadIcsUrl]);
 
   const handleFetchAiPreview = async () => {
     if (!event || !user) return;
@@ -169,8 +247,33 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
     }
   };
 
-  const myReport = user ? reports.find((r: any) => r.uid === user.uid) : null; // or check via user
-  // Let's ensure reportService returns uid if we want, or keep it simple.
+  const myReport = user ? reports.find((r: any) => r.uid === user.uid) : null;
+
+  // Calendar helpers and past event detection
+  const eventStartDate = event ? parseTimestampToDate(event.startAt) : new Date();
+  const isPastEvent = event ? eventStartDate.getTime() < Date.now() : false;
+  const calendarVenue = venue || (venueName ? { name: venueName } : null);
+
+  const handleAddToCalendar = () => {
+    if (!event || isPastEvent) return;
+
+    const icsContent = buildIcs(event, calendarVenue);
+    const filename = buildIcsFileName(event.title);
+
+    // Revoke previous object URL if any
+    if (downloadIcsUrl) {
+      try {
+        URL.revokeObjectURL(downloadIcsUrl);
+      } catch {}
+    }
+
+    const { url } = triggerIcsDownload(filename, icsContent);
+    setDownloadIcsUrl(url);
+    setDownloadIcsFilename(filename);
+    setCalendarDownloadedNotice(true);
+  };
+
+  const googleCalUrl = event && !isPastEvent ? buildGoogleCalendarUrl(event, calendarVenue) : '#';
 
   return (
     <>
@@ -514,6 +617,81 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             </div>
           </div>
 
+          {/* Add to Calendar Section (Placed directly near Date & Time, min 44px) */}
+          <div className="p-3 rounded-2xl bg-neutral-900/70 border border-neutral-800/80 space-y-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Button 1: Download .ics entirely in the browser */}
+              <button
+                type="button"
+                onClick={handleAddToCalendar}
+                disabled={isPastEvent}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl font-bold text-xs tracking-wide transition-all select-none ${
+                  isPastEvent
+                    ? 'bg-neutral-850 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-60'
+                    : 'bg-neutral-800 hover:bg-neutral-750 active:bg-neutral-700 text-white border border-neutral-700/80 hover:border-lime-400 active:scale-98 cursor-pointer shadow-sm'
+                }`}
+                title={isPastEvent ? t.eventDetail.eventPassed : t.eventDetail.addToCalendar}
+                aria-label={t.eventDetail.addToCalendar}
+              >
+                <Calendar className="w-4 h-4 text-lime-400 shrink-0" />
+                <span>{t.eventDetail.addToCalendar}</span>
+              </button>
+
+              {/* Button 2: Google Calendar template URL */}
+              {isPastEvent ? (
+                <button
+                  type="button"
+                  disabled
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-neutral-850 text-neutral-500 border border-neutral-800 font-bold text-xs tracking-wide cursor-not-allowed opacity-60 select-none"
+                  title={t.eventDetail.eventPassed}
+                  aria-label={t.eventDetail.googleCalendar}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                  <span>{t.eventDetail.googleCalendar}</span>
+                </button>
+              ) : (
+                <a
+                  href={googleCalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-neutral-800 hover:bg-neutral-750 active:bg-neutral-700 text-white border border-neutral-700/80 hover:border-lime-400 active:scale-98 font-bold text-xs tracking-wide transition-all shadow-sm cursor-pointer select-none"
+                  title={t.eventDetail.googleCalendar}
+                  aria-label={t.eventDetail.googleCalendar}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-lime-400 shrink-0" />
+                  <span>{t.eventDetail.googleCalendar}</span>
+                </a>
+              )}
+            </div>
+
+            {/* Past Event Hint */}
+            {isPastEvent && (
+              <p className="text-[11px] font-mono text-neutral-500 text-center">
+                {t.eventDetail.eventPassed}
+              </p>
+            )}
+
+            {/* Success notice & Fallback link if browser/iOS blocks automatic download */}
+            {!isPastEvent && downloadIcsUrl && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] font-mono px-1">
+                <span className="text-lime-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-lime-400" />
+                  <span>{t.eventDetail.calendarDownloaded}</span>
+                </span>
+                <a
+                  href={downloadIcsUrl}
+                  download={downloadIcsFilename}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neutral-300 hover:text-white underline underline-offset-2 flex items-center gap-1 transition-colors"
+                >
+                  <span>{t.eventDetail.openCalendarFile}</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            )}
+          </div>
+
           {/* Promoter Info with Verified Blue Check */}
           {promoter && (
             <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800/80 flex items-center justify-between gap-3">
@@ -591,6 +769,92 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             </div>
           )}
 
+          {/* ==================== GOING TOGETHER? BUDDY BOARD SECTION (Requirement 4) ==================== */}
+          <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-lime-400" />
+                <h3 className="text-xs font-bold font-mono text-white uppercase tracking-wider">
+                  {t.community.goingTogether}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadEventBuddyPosts}
+                  disabled={loadingBuddyPosts}
+                  title="Refresh posts"
+                  className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingBuddyPosts ? 'animate-spin' : ''}`} />
+                </button>
+
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!profile) {
+                        setIsChooseProfileOpen(true);
+                      } else {
+                        setIsCreatePostOpen(true);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-sm min-h-[36px]"
+                  >
+                    <span>+ {t.community.postButton}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSignInForReport}
+                    className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-xs transition-all cursor-pointer"
+                  >
+                    {t.community.signInToPost}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* List of 10 newest open posts */}
+            {loadingBuddyPosts ? (
+              <p className="text-[11px] font-mono text-neutral-500 text-center py-2">
+                Loading buddy requests...
+              </p>
+            ) : buddyPosts.filter((p) => !blockedUids.includes(p.authorUid)).length === 0 ? (
+              <div className="p-4 rounded-xl bg-neutral-950/50 border border-neutral-850 text-center space-y-1">
+                <p className="text-xs text-neutral-400">
+                  {t.community.noPostsYet}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {buddyPosts
+                  .filter((p) => !blockedUids.includes(p.authorUid))
+                  .map((post) => (
+                    <BuddyPostCard
+                      key={post.id}
+                      post={post}
+                      user={user}
+                      profile={profile}
+                      isAdmin={isAdmin}
+                      onPostUpdated={loadEventBuddyPosts}
+                      onPostDeleted={loadEventBuddyPosts}
+                      onReport={(targetType, targetPath) => setReportTarget({ targetType, targetPath })}
+                      onBlockUser={async (otherUid) => {
+                        if (!user) return;
+                        if (!window.confirm(t.community.blockConfirm)) return;
+                        await blockUser(user.uid, otherUid);
+                        setBlockedUids([...blockedUids, otherUid]);
+                      }}
+                      onStartChat={onStartChat}
+                      lang={lang}
+                    />
+                  ))}
+              </div>
+            )}
+          </div>
+
           {/* Action Buttons: Buy Tickets + View IG Post */}
           <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {event.ticketUrl ? (
@@ -640,6 +904,47 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Create Buddy Post Modal */}
+      {isCreatePostOpen && profile && (
+        <CreatePostModal
+          eventId={event.id}
+          eventTitle={event.title}
+          profile={profile}
+          isOpen={true}
+          onClose={() => setIsCreatePostOpen(false)}
+          onPostCreated={loadEventBuddyPosts}
+          lang={lang}
+        />
+      )}
+
+      {/* Choose Profile Modal (if prompted) */}
+      {isChooseProfileOpen && user && (
+        <ChooseProfileModal
+          user={user}
+          existingProfile={profile}
+          isOpen={true}
+          onClose={() => setIsChooseProfileOpen(false)}
+          onProfileSaved={(updated) => {
+            if (onProfileUpdated) onProfileUpdated(updated);
+            setIsChooseProfileOpen(false);
+            setIsCreatePostOpen(true);
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* Report Modal */}
+      {reportTarget && user && (
+        <ReportModal
+          reporterUid={user.uid}
+          targetType={reportTarget.targetType}
+          targetPath={reportTarget.targetPath}
+          isOpen={true}
+          onClose={() => setReportTarget(null)}
+          lang={lang}
+        />
+      )}
     </>
   );
 };

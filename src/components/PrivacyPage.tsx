@@ -68,7 +68,27 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ lang, onBack }) => {
               {t.heading4}
             </h2>
             <p className="text-neutral-400 text-xs sm:text-sm">
-              {t.content4} <a href="mailto:wanthawatjx@gmail.com" className="text-lime-400 underline font-mono">wanthawatjx@gmail.com</a>
+              {t.content4}
+            </p>
+          </section>
+
+          <section className="space-y-2 p-5 rounded-2xl bg-neutral-950 border border-neutral-800/80">
+            <h2 className="text-base font-bold text-white font-mono flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-lime-400" />
+              {t.heading5}
+            </h2>
+            <p className="text-neutral-400 text-xs sm:text-sm">
+              {t.content5}
+            </p>
+          </section>
+
+          <section className="space-y-2 p-5 rounded-2xl bg-neutral-950 border border-neutral-800/80">
+            <h2 className="text-base font-bold text-white font-mono flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-lime-400" />
+              {t.heading6}
+            </h2>
+            <p className="text-neutral-400 text-xs sm:text-sm">
+              {t.content6}
             </p>
           </section>
         </div>
