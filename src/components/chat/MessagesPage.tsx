@@ -13,8 +13,9 @@ import {
   reportChat,
   markChatAsRead,
   fetchChatRead,
+  fetchChatMessagesForReport,
 } from '../../services/chatService';
-import { blockUser } from '../../services/communityService';
+import { blockUser, fetchBlockedUids } from '../../services/communityService';
 import { Language, translations } from '../../i18n';
 import {
   MessageSquare,
@@ -26,10 +27,10 @@ import {
   ShieldAlert,
   AlertTriangle,
   Check,
-  X,
   Lock,
   UserX,
   EyeOff,
+  WifiOff,
 } from 'lucide-react';
 import { ReportModal } from '../community/ReportModal';
 
@@ -51,6 +52,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   onOpenProfileSetup,
 }) => {
   const t = translations[lang].chat;
+  const commT = translations[lang].community;
   const commonT = translations[lang].states;
 
   const [activeTab, setActiveTab] = useState<'chats' | 'requests'>('chats');
@@ -58,6 +60,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readMap, setReadMap] = useState<Record<string, Date | null>>({});
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
 
   // Active open conversation
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
@@ -66,22 +71,45 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   const [messageError, setMessageError] = useState<string | null>(null);
   const [newMessageText, setNewMessageText] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
-  // Moderation & Action Modals
+  // Inline confirmation states (no window.confirm / window.alert)
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'hide'; chat: Chat }
+    | { type: 'block'; chat: Chat }
+    | { type: 'deleteMsg'; msgId: string }
+    | null
+  >(null);
+
+  // Moderation & Report Modal
   const [reportingTarget, setReportingTarget] = useState<{
-    chatId: string;
+    chat: Chat;
     messages: ChatMessage[];
+    blockOnReport?: boolean;
   } | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMarkedMsgCountRef = useRef<number>(0);
+
+  // Track online / offline state
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Scroll to bottom when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat list (one-time query, no listener)
+  // Load chat list (one-time query, max 20, no listener)
   const loadChats = async () => {
     if (!user) {
       setLoading(false);
@@ -90,10 +118,11 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     try {
       setLoading(true);
       setError(null);
-      const list = await fetchUserChats(user.uid);
+      const blocked = await fetchBlockedUids(user.uid);
+      const list = await fetchUserChats(user.uid, blocked);
       setChats(list);
 
-      // Fetch read timestamps in parallel for the list
+      // Fetch read timestamps for loaded chats (no listener)
       const reads: Record<string, Date | null> = {};
       await Promise.all(
         list.map(async (c) => {
@@ -103,7 +132,6 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       );
       setReadMap(reads);
 
-      // Auto-select initialChatId if specified
       if (initialChatId) {
         const found = list.find((c) => c.id === initialChatId);
         if (found) {
@@ -120,19 +148,24 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
   useEffect(() => {
     loadChats();
-  }, [user, initialChatId]);
+  }, [user?.uid, initialChatId]);
 
-  // Open active conversation listener (limit 50 newest messages)
+  // Open active conversation realtime listener ONLY (limit 50 newest messages), unsubscribed on close
   useEffect(() => {
     if (!selectedChat || !user) {
       setMessages([]);
+      setConfirmAction(null);
+      setSendError(null);
       return;
     }
 
     setLoadingMessages(true);
     setMessageError(null);
+    setSendError(null);
+    setConfirmAction(null);
+    lastMarkedMsgCountRef.current = 0;
 
-    // Mark as read
+    // Mark as read on open
     markChatAsRead(selectedChat.id, user.uid);
     setReadMap((prev) => ({ ...prev, [selectedChat.id]: new Date() }));
 
@@ -141,7 +174,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
       (msgs) => {
         setMessages(msgs);
         setLoadingMessages(false);
-        markChatAsRead(selectedChat.id, user.uid);
+        // Only write lastReadAt when new incoming messages arrive while open
+        if (msgs.length > lastMarkedMsgCountRef.current) {
+          lastMarkedMsgCountRef.current = msgs.length;
+          const latest = msgs[msgs.length - 1];
+          if (latest && latest.senderUid !== user.uid) {
+            markChatAsRead(selectedChat.id, user.uid);
+            setReadMap((prev) => ({ ...prev, [selectedChat.id]: new Date() }));
+          }
+        }
       },
       (err) => {
         console.error('Messages subscription error:', err);
@@ -153,10 +194,12 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     return () => {
       unsubscribe();
     };
-  }, [selectedChat?.id, user]);
+  }, [selectedChat?.id, user?.uid]);
 
   // Filter chats by tab
-  const acceptedChats = chats.filter((c) => c.status === 'accepted' || (c.status === 'pending' && c.initiator === user?.uid));
+  const acceptedChats = chats.filter(
+    (c) => c.status === 'accepted' || (c.status === 'pending' && c.initiator === user?.uid)
+  );
   const pendingRequests = chats.filter(
     (c) => c.status === 'pending' && c.initiator !== user?.uid
   );
@@ -171,24 +214,37 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     if (!user) return false;
     const lastRead = readMap[chat.id];
     if (!chat.lastMessageAt) return false;
-    const lastMsgTime = chat.lastMessageAt.toDate ? chat.lastMessageAt.toDate() : new Date(chat.lastMessageAt);
+    const lastMsgTime = chat.lastMessageAt.toDate
+      ? chat.lastMessageAt.toDate()
+      : new Date(chat.lastMessageAt);
     if (!lastRead) return true;
     return lastMsgTime > lastRead;
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedChat || !user) return;
+    if (!selectedChat || !user || isOffline) return;
     const clean = newMessageText.trim();
     if (!clean) return;
 
     try {
       setSending(true);
+      setSendError(null);
       await sendChatMessage(selectedChat.id, user.uid, clean);
       setNewMessageText('');
+      const preview = clean.slice(0, 80);
+      const now = new Date();
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === selectedChat.id
+            ? { ...c, lastMessagePreview: preview, lastMessageAt: now }
+            : c
+        )
+      );
+      setReadMap((prev) => ({ ...prev, [selectedChat.id]: now }));
     } catch (err: any) {
       console.error('Failed to send message:', err);
-      alert(lang === 'th' ? 'ไม่สามารถส่งข้อความได้' : 'Failed to send message');
+      setSendError(t.sendError);
     } finally {
       setSending(false);
     }
@@ -198,9 +254,11 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     try {
       await acceptChat(chat.id);
       setSelectedChat((prev) => (prev?.id === chat.id ? { ...prev, status: 'accepted' } : prev));
-      loadChats();
+      setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, status: 'accepted' } : c)));
+      setActiveTab('chats');
     } catch (err) {
       console.error('Failed to accept chat:', err);
+      setError(commonT.errorMessage);
     }
   };
 
@@ -208,57 +266,88 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     try {
       await declineChat(chat.id);
       setSelectedChat((prev) => (prev?.id === chat.id ? { ...prev, status: 'declined' } : prev));
-      loadChats();
+      setChats((prev) => prev.filter((c) => c.id !== chat.id));
     } catch (err) {
       console.error('Failed to decline chat:', err);
+      setError(commonT.errorMessage);
     }
   };
 
-  const handleDeleteMessage = async (msgId: string) => {
+  const handleDeleteMessageConfirmed = async (msgId: string) => {
     if (!selectedChat) return;
-    if (!window.confirm(t.deleteMessageConfirm)) return;
     try {
       await deleteChatMessage(selectedChat.id, msgId);
+      setConfirmAction(null);
     } catch (err) {
       console.error('Failed to delete message:', err);
     }
   };
 
-  const handleHideChat = async (chat: Chat) => {
+  const handleHideChatConfirmed = async (chat: Chat) => {
     if (!user) return;
-    if (!window.confirm(t.deleteChatConfirm)) return;
     try {
       await hideChatForUser(chat.id, user.uid, chat.hiddenBy);
-      setSelectedChat(null);
-      loadChats();
+      setConfirmAction(null);
+      if (selectedChat?.id === chat.id) setSelectedChat(null);
+      setChats((prev) => prev.filter((c) => c.id !== chat.id));
     } catch (err) {
       console.error('Failed to hide chat:', err);
     }
   };
 
-  const handleBlockUser = async (chat: Chat) => {
+  const handleBlockUserConfirmed = async (chat: Chat) => {
     if (!user) return;
     const otherUid = chat.members.find((m) => m !== user.uid);
     if (!otherUid) return;
-    if (!window.confirm(translations[lang].community.blockConfirm)) return;
     try {
       await blockUser(user.uid, otherUid);
       await hideChatForUser(chat.id, user.uid, chat.hiddenBy);
-      setSelectedChat(null);
-      loadChats();
-      setActionSuccess(translations[lang].community.userBlocked);
+      setConfirmAction(null);
+      if (selectedChat?.id === chat.id) setSelectedChat(null);
+      setChats((prev) => prev.filter((c) => !c.members.includes(otherUid)));
+      setActionSuccess(commT.userBlocked);
       setTimeout(() => setActionSuccess(null), 3000);
     } catch (err) {
       console.error('Failed to block user:', err);
     }
   };
 
+  const handleOpenBlockAndReportFromRequest = async (chat: Chat) => {
+    const fetched = await fetchChatMessagesForReport(chat.id);
+    const msgsToCopy: ChatMessage[] =
+      fetched.length > 0
+        ? fetched
+        : chat.lastMessagePreview
+          ? [
+              {
+                id: 'first',
+                senderUid: chat.initiator,
+                text: chat.lastMessagePreview,
+                createdAt: chat.lastMessageAt,
+              },
+            ]
+          : [];
+    setReportingTarget({ chat, messages: msgsToCopy, blockOnReport: true });
+  };
+
   const handleReportChatSubmit = async (reason: ReportReason) => {
     if (!reportingTarget || !user) return;
+    const { chat, messages: msgs, blockOnReport } = reportingTarget;
     try {
-      await reportChat(user.uid, reportingTarget.chatId, reportingTarget.messages, reason);
+      await reportChat(user.uid, chat.id, msgs, reason);
+      if (blockOnReport) {
+        const otherUid = chat.members.find((m) => m !== user.uid);
+        if (otherUid) {
+          await blockUser(user.uid, otherUid);
+        }
+        await hideChatForUser(chat.id, user.uid, chat.hiddenBy);
+        if (selectedChat?.id === chat.id) setSelectedChat(null);
+        setChats((prev) => prev.filter((c) => c.id !== chat.id));
+      }
       setReportingTarget(null);
-      setActionSuccess(translations[lang].community.reportSuccess);
+      setActionSuccess(
+        blockOnReport ? `${commT.userBlocked} • ${commT.reportSuccess}` : commT.reportSuccess
+      );
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err) {
       console.error('Failed to submit chat report:', err);
@@ -278,7 +367,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           <button
             type="button"
             onClick={onBackToMap}
-            className="w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-mono text-xs font-bold transition-all"
+            className="w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-mono text-xs font-bold transition-all cursor-pointer"
           >
             {translations[lang].privacy.backToMap}
           </button>
@@ -287,8 +376,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     );
   }
 
-  // Profile not set up state
-  if (!userProfile) {
+  // Profile not set up or age not confirmed
+  if (!userProfile || !userProfile.ageConfirmed) {
     return (
       <div className="fixed inset-0 z-2000 bg-black text-white flex flex-col items-center justify-center p-6">
         <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-2xl p-6 text-center space-y-4">
@@ -297,19 +386,21 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           </div>
           <h2 className="text-lg font-bold font-mono text-white">{t.title}</h2>
           <p className="text-xs text-neutral-400">
-            {lang === 'th' ? 'กรุณาตั้งชื่อโปรไฟล์และยืนยันอายุก่อนใช้งานระบบส่งข้อความ' : 'Please set up your profile and confirm age before messaging'}
+            {lang === 'th'
+              ? 'กรุณาตั้งชื่อโปรไฟล์และยืนยันอายุก่อนใช้งานระบบส่งข้อความ'
+              : 'Please set up your profile and confirm age before messaging'}
           </p>
           <button
             type="button"
             onClick={onOpenProfileSetup}
-            className="w-full py-2.5 rounded-xl bg-lime-400 text-black font-mono text-xs font-bold transition-all shadow-md"
+            className="w-full py-2.5 rounded-xl bg-lime-400 text-black font-mono text-xs font-bold transition-all shadow-md cursor-pointer"
           >
-            {translations[lang].community.chooseNameTitle}
+            {commT.chooseNameTitle}
           </button>
           <button
             type="button"
             onClick={onBackToMap}
-            className="w-full py-2 rounded-xl text-neutral-400 hover:text-white font-mono text-xs transition-all"
+            className="w-full py-2 rounded-xl text-neutral-400 hover:text-white font-mono text-xs transition-all cursor-pointer"
           >
             {translations[lang].privacy.backToMap}
           </button>
@@ -322,31 +413,31 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     <div className="fixed inset-0 z-2000 bg-black text-white flex flex-col overflow-hidden">
       {/* Top Header */}
       <header className="h-14 border-b border-neutral-800 bg-neutral-950 px-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={selectedChat ? () => setSelectedChat(null) : onBackToMap}
-            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-colors cursor-pointer shrink-0"
             title={selectedChat ? 'Back to chat list' : t.title}
           >
             <ArrowLeft className="w-4 h-4 text-lime-400" />
           </button>
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-lime-400" />
-            <h1 className="text-sm font-mono font-bold text-white tracking-wider uppercase">
+          <div className="flex items-center gap-2 min-w-0">
+            <MessageSquare className="w-4 h-4 text-lime-400 shrink-0" />
+            <h1 className="text-sm font-mono font-bold text-white tracking-wider uppercase truncate">
               {selectedChat ? getOtherName(selectedChat) : t.title}
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {!selectedChat && (
             <button
               type="button"
               onClick={loadChats}
-              disabled={loading}
-              className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors cursor-pointer"
-              title={translations[lang].community.refresh}
+              disabled={loading || isOffline}
+              className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+              title={commT.refresh}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-lime-400' : ''}`} />
             </button>
@@ -356,25 +447,25 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setReportingTarget({ chatId: selectedChat.id, messages })}
+                onClick={() => setReportingTarget({ chat: selectedChat, messages })}
                 className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-amber-400 border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
-                title={translations[lang].community.report}
+                title={commT.report}
               >
                 <Flag className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline font-mono">{translations[lang].community.report}</span>
+                <span className="hidden sm:inline font-mono">{commT.report}</span>
               </button>
               <button
                 type="button"
-                onClick={() => handleBlockUser(selectedChat)}
+                onClick={() => setConfirmAction({ type: 'block', chat: selectedChat })}
                 className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-red-400 border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
-                title={translations[lang].community.block}
+                title={commT.block}
               >
                 <UserX className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline font-mono">{translations[lang].community.block}</span>
+                <span className="hidden sm:inline font-mono">{commT.block}</span>
               </button>
               <button
                 type="button"
-                onClick={() => handleHideChat(selectedChat)}
+                onClick={() => setConfirmAction({ type: 'hide', chat: selectedChat })}
                 className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
                 title={t.deleteChatForMe}
               >
@@ -386,10 +477,18 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         </div>
       </header>
 
+      {/* Offline Banner */}
+      {isOffline && (
+        <div className="bg-amber-950/90 border-b border-amber-700/60 text-amber-200 px-4 py-2 text-xs font-mono flex items-center justify-center gap-2 shrink-0">
+          <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{t.offlineNotice}</span>
+        </div>
+      )}
+
       {/* Action Success Toast */}
       {actionSuccess && (
-        <div className="bg-lime-400 text-black px-4 py-2 text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all">
-          <Check className="w-4 h-4" />
+        <div className="bg-lime-400 text-black px-4 py-2 text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all shrink-0">
+          <Check className="w-4 h-4 shrink-0" />
           <span>{actionSuccess}</span>
         </div>
       )}
@@ -447,7 +546,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 <button
                   type="button"
                   onClick={loadChats}
-                  className="px-3 py-1.5 rounded-lg bg-neutral-800 text-xs font-mono text-white hover:bg-neutral-700"
+                  className="px-3 py-1.5 rounded-lg bg-neutral-800 text-xs font-mono text-white hover:bg-neutral-700 cursor-pointer"
                 >
                   {t.retry}
                 </button>
@@ -522,34 +621,36 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                           {t.statusPending}
                         </span>
                       </div>
-                      <p className="text-xs text-neutral-300 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/80 font-sans leading-relaxed">
+                      <p className="text-xs text-neutral-300 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/80 font-sans leading-relaxed whitespace-pre-wrap break-words">
                         "{chat.lastMessagePreview}"
                       </p>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => handleAcceptRequest(chat)}
-                          className="flex-1 py-1.5 px-3 rounded-lg bg-lime-400 hover:bg-lime-300 text-black text-xs font-mono font-bold flex items-center justify-center gap-1 transition-all shadow-sm"
+                          className="flex-1 py-1.5 px-3 rounded-lg bg-lime-400 hover:bg-lime-300 text-black text-xs font-mono font-bold flex items-center justify-center gap-1 transition-all shadow-sm cursor-pointer disabled:opacity-50"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>{t.accept}</span>
                         </button>
                         <button
                           type="button"
+                          disabled={isOffline}
                           onClick={() => handleDeclineRequest(chat)}
-                          className="py-1.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-mono font-bold transition-all"
+                          className="py-1.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-mono font-bold transition-all cursor-pointer disabled:opacity-50"
                         >
                           {t.decline}
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setReportingTarget({ chatId: chat.id, messages: [] });
-                          }}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-amber-400 transition-all"
+                          disabled={isOffline}
+                          onClick={() => handleOpenBlockAndReportFromRequest(chat)}
+                          className="py-1.5 px-2.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 text-red-300 border border-red-800/60 text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
                           title={t.blockAndReport}
                         >
-                          <Flag className="w-3.5 h-3.5" />
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          <span>{t.blockAndReport}</span>
                         </button>
                       </div>
                     </div>
@@ -574,6 +675,47 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 <span>{t.safetyNotice}</span>
               </div>
 
+              {/* Inline Confirmation Bar (Block / Hide / Delete Msg) */}
+              {confirmAction && (
+                <div className="p-3 bg-red-950/60 border-b border-red-800/80 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+                  <span className="text-red-200 font-sans">
+                    {confirmAction.type === 'block'
+                      ? commT.blockConfirm
+                      : confirmAction.type === 'hide'
+                        ? t.deleteChatConfirm
+                        : t.deleteMessageConfirm}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmAction(null)}
+                      className="px-3 py-1 rounded-lg bg-neutral-800 text-neutral-300 font-mono text-xs cursor-pointer"
+                    >
+                      {commT.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirmAction.type === 'block') {
+                          handleBlockUserConfirmed(confirmAction.chat);
+                        } else if (confirmAction.type === 'hide') {
+                          handleHideChatConfirmed(confirmAction.chat);
+                        } else {
+                          handleDeleteMessageConfirmed(confirmAction.msgId);
+                        }
+                      }}
+                      className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs cursor-pointer"
+                    >
+                      {confirmAction.type === 'block'
+                        ? commT.block
+                        : confirmAction.type === 'hide'
+                          ? t.deleteChatForMe
+                          : t.deleteMessage}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Status Banner if pending / declined */}
               {selectedChat.status === 'pending' && selectedChat.initiator === user.uid && (
                 <div className="p-3 bg-amber-950/40 border-b border-amber-900/50 text-xs text-amber-300 text-center font-mono">
@@ -582,24 +724,34 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               )}
 
               {selectedChat.status === 'pending' && selectedChat.initiator !== user.uid && (
-                <div className="p-3 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between gap-3">
+                <div className="p-3 bg-neutral-950 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3">
                   <span className="text-xs font-mono text-neutral-300">
                     {lang === 'th' ? 'คำขอสนทนาใหม่จากผู้ใช้คนนี้' : 'New conversation request'}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={() => handleAcceptRequest(selectedChat)}
-                      className="py-1.5 px-3 rounded-lg bg-lime-400 text-black text-xs font-mono font-bold"
+                      className="py-1.5 px-3 rounded-lg bg-lime-400 text-black text-xs font-mono font-bold cursor-pointer disabled:opacity-50"
                     >
                       {t.accept}
                     </button>
                     <button
                       type="button"
+                      disabled={isOffline}
                       onClick={() => handleDeclineRequest(selectedChat)}
-                      className="py-1.5 px-3 rounded-lg bg-neutral-800 text-neutral-300 text-xs font-mono"
+                      className="py-1.5 px-3 rounded-lg bg-neutral-800 text-neutral-300 text-xs font-mono cursor-pointer disabled:opacity-50"
                     >
                       {t.decline}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isOffline}
+                      onClick={() => setReportingTarget({ chat: selectedChat, messages, blockOnReport: true })}
+                      className="py-1.5 px-3 rounded-lg bg-red-950/60 text-red-300 border border-red-800/60 text-xs font-mono cursor-pointer disabled:opacity-50"
+                    >
+                      {t.blockAndReport}
                     </button>
                   </div>
                 </div>
@@ -656,8 +808,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                           {isMe ? (
                             <button
                               type="button"
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity p-0.5 cursor-pointer"
+                              onClick={() => setConfirmAction({ type: 'deleteMsg', msgId: msg.id })}
+                              className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 hover:text-red-400 transition-opacity p-0.5 cursor-pointer"
                               title={t.deleteMessage}
                             >
                               <Trash2 className="w-3 h-3" />
@@ -665,8 +817,8 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setReportingTarget({ chatId: selectedChat.id, messages })}
-                              className="opacity-0 group-hover:opacity-100 hover:text-amber-400 transition-opacity p-0.5 cursor-pointer"
+                              onClick={() => setReportingTarget({ chat: selectedChat, messages })}
+                              className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 hover:text-amber-400 transition-opacity p-0.5 cursor-pointer"
                               title={t.reportMessage}
                             >
                               <Flag className="w-3 h-3" />
@@ -681,7 +833,11 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               </div>
 
               {/* Message Input Bottom Bar */}
-              <div className="p-3 bg-neutral-950 border-t border-neutral-800 shrink-0">
+              <div className="p-3 bg-neutral-950 border-t border-neutral-800 shrink-0 space-y-2">
+                {sendError && (
+                  <p className="text-xs text-red-400 font-mono text-center">{sendError}</p>
+                )}
+
                 {selectedChat.status === 'accepted' ? (
                   <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                     <input
@@ -690,12 +846,12 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                       onChange={(e) => setNewMessageText(e.target.value)}
                       placeholder={t.placeholder}
                       maxLength={1000}
-                      disabled={sending}
-                      className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400 transition-colors font-sans"
+                      disabled={sending || isOffline}
+                      className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400 transition-colors font-sans disabled:opacity-50"
                     />
                     <button
                       type="submit"
-                      disabled={sending || !newMessageText.trim()}
+                      disabled={sending || isOffline || !newMessageText.trim()}
                       className="min-h-[44px] min-w-[44px] px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-mono font-bold text-xs flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md cursor-pointer shrink-0"
                     >
                       <Send className="w-4 h-4" />
@@ -703,9 +859,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                   </form>
                 ) : (
                   <div className="p-2 text-center text-xs font-mono text-neutral-500">
-                    {selectedChat.status === 'pending'
-                      ? t.waitingForAcceptance
-                      : t.chatDeclined}
+                    {selectedChat.status === 'pending' ? t.waitingForAcceptance : t.chatDeclined}
                   </div>
                 )}
               </div>
@@ -727,7 +881,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           isOpen={Boolean(reportingTarget)}
           onClose={() => setReportingTarget(null)}
           targetType="chat"
-          targetId={reportingTarget.chatId}
+          targetId={reportingTarget.chat.id}
           onSubmit={handleReportChatSubmit}
           lang={lang}
         />

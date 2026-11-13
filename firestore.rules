@@ -233,7 +233,7 @@ service cloud.firestore {
         && data.members is list && data.members.size() == 2
         && data.members[0] is string && isValidId(data.members[0])
         && data.members[1] is string && isValidId(data.members[1])
-        && data.members[0] != data.members[1]
+        && data.members[0] < data.members[1]
         && request.auth.uid in data.members
         && data.initiator in data.members
         && data.status in ['pending', 'accepted', 'declined']
@@ -343,7 +343,13 @@ service cloud.firestore {
     // 11. Direct Message Chats: Private communication between two signed-in users
     match /chats/{chatId} {
       // Read cost: 0 extra lookups; evaluates membership directly on the chat document
-      allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
+      // (or validates deterministic uidA_uidB path when checking non-existent chat doc).
+      allow get: if isSignedIn() && (
+        resource == null
+          ? (isValidId(chatId) && (chatId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_\\-]+$') || chatId.matches('^[a-zA-Z0-9_\\-]+_' + request.auth.uid + '$')))
+          : request.auth.uid in resource.data.members
+      );
+      allow list: if isSignedIn() && request.auth.uid in resource.data.members;
 
       // Creation read cost:
       // 1 get() on caller's profile to verify ageConfirmed == true (1 read)
@@ -369,11 +375,13 @@ service cloud.firestore {
         && !isUserBlocked(request.auth.uid, getOtherUid(incoming().members, request.auth.uid));
 
       // Update read cost:
-      // - Status / Message update: 3 lookups (1 isTargetBanned, 2 isUserBlocked).
-      // - Delete for me (hide): 0 extra document lookups.
+      // - Status / Message update: 4 lookups (1 isBanned + 1 isTargetBanned + 2 isUserBlocked).
+      // - Delete for me (hide): 1 lookup (1 isBanned).
       allow update: if isSignedIn()
         && !isBanned()
+        && isValidId(chatId)
         && request.auth.uid in existing().members
+        && isValidChat(incoming())
         && (
           // Action 1: Accept or Decline by recipient (non-initiator)
           (
@@ -386,6 +394,7 @@ service cloud.firestore {
             && incoming().lastMessageAt == existing().lastMessageAt
             && incoming().lastMessagePreview == existing().lastMessagePreview
             && incoming().names == existing().names
+            && incoming().updatedAt == request.time
             && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
             && !isTargetBanned(getOtherUid(existing().members, request.auth.uid))
             && !isUserBlocked(getOtherUid(existing().members, request.auth.uid), request.auth.uid)
@@ -404,23 +413,30 @@ service cloud.firestore {
             && incoming().createdAt == existing().createdAt
             && incoming().names == existing().names
             && incoming().lastMessageAt == request.time
+            && incoming().updatedAt == request.time
             && incoming().lastMessagePreview is string
             && incoming().lastMessagePreview.size() <= 80
-            && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt', 'lastMessagePreview', 'updatedAt', 'hiddenBy'])
+            && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt', 'lastMessagePreview', 'updatedAt'])
             && !isTargetBanned(getOtherUid(existing().members, request.auth.uid))
             && !isUserBlocked(getOtherUid(existing().members, request.auth.uid), request.auth.uid)
             && !isUserBlocked(request.auth.uid, getOtherUid(existing().members, request.auth.uid))
           )
           ||
-          // Action 3: Delete chat for me (hide from list)
+          // Action 3: Delete chat for me (hide from list without affecting other member)
           (
             incoming().status == existing().status
             && incoming().members == existing().members
             && incoming().initiator == existing().initiator
             && incoming().createdAt == existing().createdAt
             && incoming().names == existing().names
+            && incoming().lastMessageAt == existing().lastMessageAt
+            && incoming().lastMessagePreview == existing().lastMessagePreview
             && incoming().diff(existing()).affectedKeys().hasOnly(['hiddenBy'])
-            && incoming().hiddenBy is list && incoming().hiddenBy.size() <= 2
+            && incoming().hiddenBy is list
+            && incoming().hiddenBy.size() >= 1 && incoming().hiddenBy.size() <= 2
+            && request.auth.uid in incoming().hiddenBy
+            && existing().members.hasAll(incoming().hiddenBy)
+            && (!('hiddenBy' in existing()) || incoming().hiddenBy.hasAll(existing().hiddenBy))
           )
         );
 

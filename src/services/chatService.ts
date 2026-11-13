@@ -1,6 +1,6 @@
 /**
  * Direct Message (Chat) Service
- * Low-read usage: No listener on the chat list (one-time bounded query);
+ * Low-read usage: No listener on the chat list (one-time bounded query, max 20 chats);
  * Realtime listener ONLY on the open active conversation (limit 50 newest messages).
  */
 
@@ -14,12 +14,13 @@ import {
   deleteDoc,
   query,
   where,
+  orderBy,
   limit,
   onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Chat, ChatMessage, ChatStatus } from '../types/chat';
+import { Chat, ChatMessage } from '../types/chat';
 import { UserProfile, ReportReason } from '../types/community';
 
 /**
@@ -63,7 +64,7 @@ export function hideChatLocally(chatId: string, myUid: string): void {
 /**
  * Fetch 20 most recent chats for user (one-time query, no listener)
  */
-export async function fetchUserChats(myUid: string): Promise<Chat[]> {
+export async function fetchUserChats(myUid: string, blockedUids: string[] = []): Promise<Chat[]> {
   const path = 'chats';
   try {
     const q = query(
@@ -77,9 +78,17 @@ export async function fetchUserChats(myUid: string): Promise<Chat[]> {
     snap.forEach((d) => {
       const data = d.data();
       const hiddenBy = Array.isArray(data.hiddenBy) ? data.hiddenBy : [];
-      if (hiddenBy.includes(myUid) || isChatHiddenLocally(d.id, myUid)) {
+      const members = Array.isArray(data.members) ? data.members : [];
+      const otherUid = members.find((m: string) => m !== myUid);
+
+      if (
+        hiddenBy.includes(myUid) ||
+        isChatHiddenLocally(d.id, myUid) ||
+        (otherUid && blockedUids.includes(otherUid))
+      ) {
         return;
       }
+
       chats.push({
         id: d.id,
         members: data.members,
@@ -94,12 +103,14 @@ export async function fetchUserChats(myUid: string): Promise<Chat[]> {
       });
     });
 
-    // Client-side sort by lastMessageAt descending
-    return chats.sort((a, b) => {
-      const tA = a.lastMessageAt?.toMillis ? a.lastMessageAt.toMillis() : new Date(a.lastMessageAt || 0).getTime();
-      const tB = b.lastMessageAt?.toMillis ? b.lastMessageAt.toMillis() : new Date(b.lastMessageAt || 0).getTime();
-      return tB - tA;
-    });
+    // Client-side sort by lastMessageAt descending and cap at 20 most recent
+    return chats
+      .sort((a, b) => {
+        const tA = a.lastMessageAt?.toMillis ? a.lastMessageAt.toMillis() : new Date(a.lastMessageAt || 0).getTime();
+        const tB = b.lastMessageAt?.toMillis ? b.lastMessageAt.toMillis() : new Date(b.lastMessageAt || 0).getTime();
+        return tB - tA;
+      })
+      .slice(0, 20);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
@@ -143,6 +154,13 @@ export async function createPendingChat(
   targetName: string,
   firstMessageText: string
 ): Promise<{ chatId: string; alreadyExisted: boolean }> {
+  if (!callerProfile.ageConfirmed) {
+    throw new Error('Profile and age confirmation are required to start a chat.');
+  }
+  if (callerProfile.uid === targetUid) {
+    throw new Error('Cannot start a chat with yourself.');
+  }
+
   const chatId = getChatId(callerProfile.uid, targetUid);
   const path = `chats/${chatId}`;
 
@@ -274,6 +292,37 @@ export async function deleteChatMessage(
 }
 
 /**
+ * Fetch up to 10 most recent messages once (used when reporting from Requests inbox before opening chat)
+ */
+export async function fetchChatMessagesForReport(chatId: string): Promise<ChatMessage[]> {
+  try {
+    const q = query(
+      collection(db, 'chats', chatId, 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+    const snap = await getDocs(q);
+    const list: ChatMessage[] = [];
+    snap.forEach((d) => {
+      const data = d.data();
+      list.push({
+        id: d.id,
+        senderUid: data.senderUid,
+        text: data.text || '',
+        createdAt: data.createdAt,
+      });
+    });
+    return list.sort((a, b) => {
+      const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+      const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+      return tA - tB;
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Realtime listener ONLY on the open active conversation (limit 50 newest messages).
  * Must be unsubscribed when closing conversation.
  */
@@ -283,7 +332,11 @@ export function subscribeToChatMessages(
   onError: (err: any) => void
 ): () => void {
   const path = `chats/${chatId}/messages`;
-  const q = query(collection(db, 'chats', chatId, 'messages'), limit(50));
+  const q = query(
+    collection(db, 'chats', chatId, 'messages'),
+    orderBy('createdAt', 'desc'),
+    limit(50)
+  );
 
   return onSnapshot(
     q,
@@ -299,7 +352,7 @@ export function subscribeToChatMessages(
         });
       });
 
-      // Sort chronological ascending
+      // Sort chronological ascending for chat display
       messages.sort((a, b) => {
         const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
         const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
@@ -310,7 +363,11 @@ export function subscribeToChatMessages(
     },
     (error) => {
       onError(error);
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch {
+        // Logged via handleFirestoreError without throwing unhandled inside onSnapshot callback
+      }
     }
   );
 }
@@ -319,7 +376,6 @@ export function subscribeToChatMessages(
  * Mark chat as read for user
  */
 export async function markChatAsRead(chatId: string, myUid: string): Promise<void> {
-  const path = `chats/${chatId}/reads/${myUid}`;
   try {
     await setDoc(doc(db, 'chats', chatId, 'reads', myUid), {
       lastReadAt: serverTimestamp(),

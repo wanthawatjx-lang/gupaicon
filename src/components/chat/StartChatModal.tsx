@@ -38,6 +38,11 @@ export const StartChatModal: React.FC<StartChatModalProps> = ({
     const clean = text.trim();
     if (!clean) return;
 
+    if (!callerProfile.ageConfirmed) {
+      setError(t.signInToMessage);
+      return;
+    }
+
     if (callerProfile.uid === targetUid) {
       setError(lang === 'th' ? 'ไม่สามารถส่งข้อความหาตนเองได้' : 'You cannot message yourself');
       return;

@@ -26,6 +26,7 @@ import {
   X,
   Calendar,
 } from 'lucide-react';
+import { UserProfileModal } from './UserProfileModal';
 
 interface BuddyPostCardProps {
   post: BuddyPost;
@@ -76,8 +77,14 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
   const [editMeetUpNote, setEditMeetUpNote] = useState(post.meetUpNote || '');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [profileTarget, setProfileTarget] = useState<{
+    uid: string;
+    name: string;
+    emoji?: string;
+  } | null>(null);
 
   const isAuthor = user ? user.uid === post.authorUid : false;
+  const canMessage = Boolean(user && profile?.ageConfirmed);
 
   const handleToggleComments = async () => {
     if (!expandedComments && comments.length === 0) {
@@ -244,10 +251,21 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
 
       {/* Author Row + Badges */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          onClick={() =>
+            setProfileTarget({
+              uid: post.authorUid,
+              name: post.authorName,
+              emoji: post.avatarEmoji,
+            })
+          }
+          title={t.community.viewProfile}
+          className="flex items-center gap-2 min-w-0 text-left group cursor-pointer"
+        >
           <span className="text-xl shrink-0">{post.avatarEmoji || '🎸'}</span>
           <div className="min-w-0">
-            <div className="text-xs font-bold text-white truncate">
+            <div className="text-xs font-bold text-white truncate group-hover:text-lime-400 transition-colors">
               {post.authorName}
             </div>
             {!eventTitle && (
@@ -256,7 +274,7 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
               </div>
             )}
           </div>
-        </div>
+        </button>
 
         <div className="flex items-center gap-1.5 shrink-0">
           <span
@@ -371,12 +389,21 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {/* Message button (Requirement 1) */}
+          {/* Message button (Requirement 1: only users with profile and ageConfirmed can use it) */}
           {!isAuthor && onStartChat && (
             <button
               type="button"
-              onClick={() => onStartChat(post.authorUid, post.authorName, post.avatarEmoji)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-lime-400 hover:bg-lime-300 text-black text-[11px] font-mono font-bold transition-all shadow-sm cursor-pointer"
+              disabled={!canMessage}
+              onClick={() => {
+                if (!canMessage) return;
+                onStartChat(post.authorUid, post.authorName, post.avatarEmoji);
+              }}
+              title={!canMessage ? t.chat.signInToMessage : t.chat.messageButton}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all shadow-sm ${
+                canMessage
+                  ? 'bg-lime-400 hover:bg-lime-300 text-black cursor-pointer'
+                  : 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
+              }`}
             >
               <MessageSquare className="w-3 h-3" />
               <span>{t.chat.messageButton}</span>
@@ -460,9 +487,19 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
                       className="p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-850 text-xs space-y-1"
                     >
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-neutral-300">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setProfileTarget({
+                              uid: comment.authorUid,
+                              name: comment.authorName,
+                            })
+                          }
+                          title={t.community.viewProfile}
+                          className="font-bold text-neutral-300 hover:text-lime-400 transition-colors cursor-pointer"
+                        >
                           {comment.authorName}
-                        </span>
+                        </button>
                         <div className="flex items-center gap-1.5 text-neutral-500 font-mono text-[10px]">
                           <span>{formatRelativeTime(comment.createdAt, lang)}</span>
                           {(isCommentAuthor || isAdmin) && (
@@ -538,6 +575,21 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
             <p className="text-[11px] text-red-400">{commentError}</p>
           )}
         </div>
+      )}
+
+      {profileTarget && (
+        <UserProfileModal
+          targetUid={profileTarget.uid}
+          fallbackName={profileTarget.name}
+          fallbackEmoji={profileTarget.emoji}
+          viewerUser={user}
+          viewerProfile={profile}
+          isOpen={true}
+          onClose={() => setProfileTarget(null)}
+          onStartChat={onStartChat}
+          onBlockUser={onBlockUser}
+          lang={lang}
+        />
       )}
     </div>
   );

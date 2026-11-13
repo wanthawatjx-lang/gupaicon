@@ -205,6 +205,8 @@ export interface TranslationDictionary {
     completeProfileToComment: string;
     signInToViewProfile: string;
     signIn: string;
+    viewProfile: string;
+    profileNotFound: string;
   };
   chat: {
     title: string;
@@ -240,6 +242,7 @@ export interface TranslationDictionary {
     statusPending: string;
     statusAccepted: string;
     statusDeclined: string;
+    sendError: string;
   };
 }
 
@@ -443,6 +446,8 @@ export const translations: Record<Language, TranslationDictionary> = {
       completeProfileToComment: 'กรุณาตั้งค่าโปรไฟล์ให้เสร็จก่อนแสดงความคิดเห็น',
       signInToViewProfile: 'กรุณาเข้าสู่ระบบด้วย Google เพื่อดูหรือแก้ไขโปรไฟล์ของคุณ',
       signIn: 'เข้าสู่ระบบด้วย Google',
+      viewProfile: 'ดูโปรไฟล์',
+      profileNotFound: 'ไม่พบโปรไฟล์ผู้ใช้นี้ (อาจถูกลบแล้ว)',
     },
     chat: {
       title: 'ข้อความส่วนตัว',
@@ -452,7 +457,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       startChatTitle: (name) => `ส่งข้อความถึง ${name}`,
       messageButton: 'ส่งข้อความ',
       firstMessageNotice: 'คำขอส่งข้อความครั้งแรก: คุณสามารถส่งข้อความเปิดได้ 1 ข้อความ และอีกฝ่ายต้องกดยอมรับก่อน จึงจะเริ่มสนทนากันได้ตามปกติ',
-      safetyNotice: 'โปรดระมัดระวังการเปิดเผยข้อมูลส่วนบุคคล เช่น เบอร์โทรหรือบัญชีการเงิน แจ้งรายงานหากพบพฤติกรรมไม่เหมาะสม',
+      safetyNotice: 'โปรดระมัดระวังการเปิดเผยข้อมูลส่วนบุคคล แจ้งรายงานหากพบพฤติกรรมไม่เหมาะสม',
       accept: 'ยอมรับ',
       decline: 'ปฏิเสธ',
       blockAndReport: 'บล็อกและรายงาน',
@@ -478,6 +483,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       statusPending: 'รอตอบรับ',
       statusAccepted: 'เชื่อมต่อแล้ว',
       statusDeclined: 'ปฏิเสธแล้ว',
+      sendError: 'ไม่สามารถส่งข้อความได้ กรุณาลองใหม่อีกครั้ง',
     },
   },
   en: {
@@ -679,6 +685,8 @@ export const translations: Record<Language, TranslationDictionary> = {
       completeProfileToComment: 'Please complete your profile to post comments.',
       signInToViewProfile: 'Sign in with Google to view or edit your community profile.',
       signIn: 'Sign in with Google',
+      viewProfile: 'View profile',
+      profileNotFound: 'Community profile not found (it may have been deleted).',
     },
     chat: {
       title: 'Direct Messages',
@@ -688,7 +696,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       startChatTitle: (name) => `Message ${name}`,
       messageButton: 'Message',
       firstMessageNotice: 'First message request: You can send one opening message. The recipient must accept before you can chat freely.',
-      safetyNotice: 'Be careful with personal info. Never share financial or sensitive data. Report any abuse immediately.',
+      safetyNotice: 'Be careful with personal info. Report abuse.',
       accept: 'Accept',
       decline: 'Decline',
       blockAndReport: 'Block & Report',
@@ -714,6 +722,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       statusPending: 'Pending',
       statusAccepted: 'Connected',
       statusDeclined: 'Declined',
+      sendError: 'Could not send message. Please try again.',
     },
   },
 };
