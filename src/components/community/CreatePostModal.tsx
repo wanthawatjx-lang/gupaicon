@@ -40,11 +40,6 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         ? 'ข้อความต้องมีความยาวระหว่าง 1–500 ตัวอักษร'
         : 'Message must be between 1 and 500 characters';
     }
-    if (/(?:https?:\/\/|www\.)/i.test(clean)) {
-      return lang === 'th'
-        ? 'ไม่อนุญาตให้ใส่ลิงก์ในข้อความเพื่อความปลอดภัย'
-        : 'Links and URLs are not permitted for safety';
-    }
     return null;
   };
 

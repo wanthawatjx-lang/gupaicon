@@ -9,6 +9,7 @@ import {
 } from '../../services/communityService';
 import { BuddyPostCard } from './BuddyPostCard';
 import { ReportModal } from './ReportModal';
+import { formatBangkokDateTime } from '../../utils/dateUtils';
 import { Language, translations } from '../../i18n';
 import {
   Users,
@@ -96,10 +97,16 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
   // Filter out blocked users
   const visiblePosts = posts.filter((p) => !blockedUids.includes(p.authorUid));
 
-  // Find event title for a post
+  // Find event title and date for a post
   const getEventTitle = (eventId: string): string => {
     const e = events.find((item) => item.id === eventId);
     return e?.title || 'Concert';
+  };
+
+  const getEventDate = (eventId: string): string | undefined => {
+    const e = events.find((item) => item.id === eventId);
+    if (!e?.startAt) return undefined;
+    return formatBangkokDateTime(e.startAt, lang);
   };
 
   return (
@@ -195,6 +202,7 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
               user={user}
               profile={profile}
               isAdmin={isAdmin}
+              blockedUids={blockedUids}
               onPostUpdated={loadPosts}
               onPostDeleted={loadPosts}
               onReport={(targetType, targetPath) => setReportTarget({ targetType, targetPath })}
@@ -202,6 +210,7 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
               onStartChat={onStartChat}
               lang={lang}
               eventTitle={getEventTitle(post.eventId)}
+              eventDate={getEventDate(post.eventId)}
               onOpenEvent={() => onOpenEvent(post.eventId)}
             />
           ))

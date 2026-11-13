@@ -196,6 +196,15 @@ export interface TranslationDictionary {
     editProfile: string;
     backToMap: string;
     bannedMessage: string;
+    editPost: string;
+    reopenPost: string;
+    saveChanges: string;
+    cancel: string;
+    commentsLoading: string;
+    noCommentsYet: string;
+    completeProfileToComment: string;
+    signInToViewProfile: string;
+    signIn: string;
   };
   chat: {
     title: string;
@@ -391,7 +400,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       writePostTitle: 'สร้างโพสต์หาเพื่อนไปคอน',
       postKindLabel: 'ประเภทโพสต์',
       postContentLabel: 'ข้อความของคุณ',
-      postContentPlaceholder: 'อยากชวนใครไปด้วย หรือมีรายละเอียดอะไรอยากบอกเพื่อนๆ (ข้อความธรรมดา ห้ามใส่ลิงก์)...',
+      postContentPlaceholder: 'อยากชวนใครไปด้วย หรือมีรายละเอียดอะไรอยากบอกเพื่อนๆ (ข้อความธรรมดา)...',
       meetUpNoteLabel: 'จุดนัดพบ / ข้อสังเกต (ไม่บังคับ)',
       meetUpNotePlaceholder: 'เช่น เจอกันหน้าทางเข้า 19:30 น.',
       publishPost: 'เผยแพร่โพสต์',
@@ -425,6 +434,15 @@ export const translations: Record<Language, TranslationDictionary> = {
       editProfile: 'แก้ไขโปรไฟล์',
       backToMap: 'กลับสู่แผนที่',
       bannedMessage: 'บัญชีของคุณถูกระงับการโพสต์เนื่องจากละเมิดกฎชุมชน',
+      editPost: 'แก้ไข',
+      reopenPost: 'เปิดรับอีกครั้ง',
+      saveChanges: 'บันทึก',
+      cancel: 'ยกเลิก',
+      commentsLoading: 'กำลังโหลดความคิดเห็น...',
+      noCommentsYet: 'ยังไม่มีความคิดเห็น พิมพ์ด้านล่างได้เลย',
+      completeProfileToComment: 'กรุณาตั้งค่าโปรไฟล์ให้เสร็จก่อนแสดงความคิดเห็น',
+      signInToViewProfile: 'กรุณาเข้าสู่ระบบด้วย Google เพื่อดูหรือแก้ไขโปรไฟล์ของคุณ',
+      signIn: 'เข้าสู่ระบบด้วย Google',
     },
     chat: {
       title: 'ข้อความส่วนตัว',
@@ -618,7 +636,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       writePostTitle: 'Create Buddy Post',
       postKindLabel: 'Post Type',
       postContentLabel: 'Your Message',
-      postContentPlaceholder: 'Who are you looking to go with? What vibes or bands do you like (plain text only, no URLs)?',
+      postContentPlaceholder: 'Who are you looking to go with? What vibes or bands do you like (plain text only)?',
       meetUpNoteLabel: 'Meet-up Note (Optional)',
       meetUpNotePlaceholder: 'e.g. Meet by entrance at 19:30',
       publishPost: 'Publish Post',
@@ -652,6 +670,15 @@ export const translations: Record<Language, TranslationDictionary> = {
       editProfile: 'Edit Profile',
       backToMap: 'Back to Map',
       bannedMessage: 'Your account has been restricted from posting due to community violations.',
+      editPost: 'Edit',
+      reopenPost: 'Re-open',
+      saveChanges: 'Save',
+      cancel: 'Cancel',
+      commentsLoading: 'Loading comments...',
+      noCommentsYet: 'No comments yet. Write one below.',
+      completeProfileToComment: 'Please complete your profile to post comments.',
+      signInToViewProfile: 'Sign in with Google to view or edit your community profile.',
+      signIn: 'Sign in with Google',
     },
     chat: {
       title: 'Direct Messages',

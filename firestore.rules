@@ -137,9 +137,10 @@ service cloud.firestore {
 
     // --- Community Profiles & Buddy Board Helper Functions ---
 
-    // Note on exists():
-    // exists(/databases/$(database)/documents/bans/$(request.auth.uid)) is strictly necessary
-    // to check user ban status during community creation/updates without leaking admin lists.
+    // Note on exists() read cost (shared Spark quota):
+    // exists(/databases/$(database)/documents/bans/$(request.auth.uid)) costs 1 document read
+    // per profile/post/comment write. It is strictly necessary to block banned users on the server
+    // even if the client is bypassed, without exposing the bans collection to public list queries.
     function isBanned() {
       return isSignedIn() && exists(/databases/$(database)/documents/bans/$(request.auth.uid));
     }
@@ -154,7 +155,7 @@ service cloud.firestore {
         && !data.displayName.matches('.*(?i)https?://.*')
         && !data.displayName.matches('.*(?i)www\\..*')
         && data.tag is string && data.tag.matches('^[0-9]{4}$')
-        && data.avatarEmoji is string && data.avatarEmoji.size() <= 16
+        && data.avatarEmoji in ['🎸', '🥁', '🎤', '🎷', '🎹', '🎧', '⚡', '📻', '🎟️', '🕶️', '🤘', '🐱', '🦊', '🐻', '👽', '🚀']
         && (!('bio' in data) || (data.bio is string && data.bio.size() <= 350))
         && data.favoriteGenres is list && data.favoriteGenres.size() <= 5
         && data.ageConfirmed is bool && data.ageConfirmed == true

@@ -48,6 +48,7 @@ interface EventDetailSheetProps {
   onOpenVenue?: () => void;
   lang: Language;
   isAdmin?: boolean;
+  availableGenres?: string[];
 }
 
 export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
@@ -64,6 +65,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   onOpenVenue,
   lang,
   isAdmin,
+  availableGenres,
 }) => {
   const [reports, setReports] = useState<CrowdReport[]>([]);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -791,19 +793,25 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 </button>
 
                 {user ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!profile) {
-                        setIsChooseProfileOpen(true);
-                      } else {
-                        setIsCreatePostOpen(true);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-sm min-h-[36px]"
-                  >
-                    <span>+ {t.community.postButton}</span>
-                  </button>
+                  buddyPosts.some((p) => p.authorUid === user.uid) ? (
+                    <span className="text-[11px] font-mono text-lime-400/90 px-2.5 py-1 rounded-xl bg-lime-400/10 border border-lime-400/20">
+                      {lang === 'th' ? 'คุณโพสต์แล้ว' : 'Posted'}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!profile) {
+                          setIsChooseProfileOpen(true);
+                        } else {
+                          setIsCreatePostOpen(true);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-sm min-h-[36px]"
+                    >
+                      <span>+ {t.community.postButton}</span>
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -816,10 +824,15 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
               </div>
             </div>
 
+            {/* Community Safety Notice */}
+            <div className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/20 text-[11px] text-amber-200/90 leading-relaxed">
+              {t.community.safetyNotice}
+            </div>
+
             {/* List of 10 newest open posts */}
             {loadingBuddyPosts ? (
               <p className="text-[11px] font-mono text-neutral-500 text-center py-2">
-                Loading buddy requests...
+                {lang === 'th' ? 'กำลังโหลดโพสต์หาเพื่อน...' : 'Loading buddy requests...'}
               </p>
             ) : buddyPosts.filter((p) => !blockedUids.includes(p.authorUid)).length === 0 ? (
               <div className="p-4 rounded-xl bg-neutral-950/50 border border-neutral-850 text-center space-y-1">
@@ -838,6 +851,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                       user={user}
                       profile={profile}
                       isAdmin={isAdmin}
+                      blockedUids={blockedUids}
                       onPostUpdated={loadEventBuddyPosts}
                       onPostDeleted={loadEventBuddyPosts}
                       onReport={(targetType, targetPath) => setReportTarget({ targetType, targetPath })}
@@ -931,6 +945,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             setIsCreatePostOpen(true);
           }}
           lang={lang}
+          availableGenres={availableGenres && availableGenres.length > 0 ? availableGenres : undefined}
         />
       )}
 

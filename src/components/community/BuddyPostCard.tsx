@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { BuddyPost, BuddyComment, UserProfile } from '../../types/community';
+import { BuddyPost, BuddyPostKind, BuddyComment, UserProfile } from '../../types/community';
 import {
   fetchComments,
   addComment,
   deleteComment,
   updateBuddyPostStatus,
+  updateBuddyPostBody,
   deleteBuddyPost,
 } from '../../services/communityService';
 import { formatRelativeTime } from '../../utils/dateUtils';
@@ -16,11 +17,14 @@ import {
   Flag,
   UserX,
   Trash2,
-  CheckCircle2,
   Clock,
   Send,
   ChevronDown,
   ChevronUp,
+  Edit3,
+  Check,
+  X,
+  Calendar,
 } from 'lucide-react';
 
 interface BuddyPostCardProps {
@@ -28,6 +32,7 @@ interface BuddyPostCardProps {
   user: User | null;
   profile?: UserProfile | null;
   isAdmin?: boolean;
+  blockedUids?: string[];
   onPostUpdated?: () => void;
   onPostDeleted?: () => void;
   onReport: (targetType: 'post' | 'comment', targetPath: string) => void;
@@ -35,6 +40,7 @@ interface BuddyPostCardProps {
   onStartChat?: (targetUid: string, targetName: string, targetEmoji?: string) => void;
   lang: Language;
   eventTitle?: string;
+  eventDate?: string;
   onOpenEvent?: () => void;
 }
 
@@ -43,6 +49,7 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
   user,
   profile,
   isAdmin,
+  blockedUids = [],
   onPostUpdated,
   onPostDeleted,
   onReport,
@@ -50,6 +57,7 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
   onStartChat,
   lang,
   eventTitle,
+  eventDate,
   onOpenEvent,
 }) => {
   const t = translations[lang];
@@ -60,6 +68,14 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
   const [newCommentText, setNewCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+
+  // Edit post state (author only)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editKind, setEditKind] = useState<BuddyPostKind>(post.kind);
+  const [editBody, setEditBody] = useState(post.body);
+  const [editMeetUpNote, setEditMeetUpNote] = useState(post.meetUpNote || '');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isAuthor = user ? user.uid === post.authorUid : false;
 
@@ -142,6 +158,39 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
     }
   };
 
+  const handleOpenEdit = () => {
+    setEditKind(post.kind);
+    setEditBody(post.body);
+    setEditMeetUpNote(post.meetUpNote || '');
+    setEditError(null);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = editBody.trim();
+    if (clean.length < 1 || clean.length > 500) {
+      setEditError(
+        lang === 'th'
+          ? 'ข้อความต้องมีความยาวระหว่าง 1–500 ตัวอักษร'
+          : 'Message must be between 1 and 500 characters'
+      );
+      return;
+    }
+    setIsSavingEdit(true);
+    setEditError(null);
+    try {
+      await updateBuddyPostBody(post.id, clean, editMeetUpNote.trim(), editKind);
+      setIsEditing(false);
+      if (onPostUpdated) onPostUpdated();
+    } catch (err: any) {
+      console.error('Failed to update post:', err);
+      setEditError(err?.message || 'Failed to update post');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   // Kind badge styles
   const getKindBadge = () => {
     switch (post.kind) {
@@ -170,14 +219,22 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
     <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3 transition-colors hover:border-neutral-750">
       {/* Event Link Header (if shown in global board) */}
       {eventTitle && (
-        <div className="flex items-center justify-between pb-2 border-b border-neutral-850">
-          <button
-            type="button"
-            onClick={onOpenEvent}
-            className="text-xs font-semibold text-lime-400 hover:underline truncate max-w-[280px] text-left cursor-pointer"
-          >
-            🎵 {eventTitle}
-          </button>
+        <div className="flex items-start justify-between gap-2 pb-2 border-b border-neutral-850">
+          <div className="min-w-0 space-y-0.5">
+            <button
+              type="button"
+              onClick={onOpenEvent}
+              className="text-xs font-semibold text-lime-400 hover:underline truncate max-w-[260px] text-left cursor-pointer block"
+            >
+              🎵 {eventTitle}
+            </button>
+            {eventDate && (
+              <div className="text-[10px] font-mono text-neutral-400 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-neutral-500 shrink-0" />
+                <span>{eventDate}</span>
+              </div>
+            )}
+          </div>
           <span className="text-[10px] font-mono text-neutral-500 flex items-center gap-1 shrink-0">
             <Clock className="w-3 h-3" />
             {formatRelativeTime(post.createdAt, lang)}
@@ -215,20 +272,85 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
         </div>
       </div>
 
-      {/* Post Text (Plain text only, no HTML or auto-clickable links) */}
-      <p className="text-xs text-neutral-200 whitespace-pre-wrap leading-relaxed select-text font-normal">
-        {post.body}
-      </p>
+      {isEditing ? (
+        <form onSubmit={handleSaveEdit} className="space-y-2.5 p-3 rounded-xl bg-neutral-950/70 border border-neutral-800">
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                { key: 'looking_for_buddy', label: t.community.kinds.looking_for_buddy },
+                { key: 'have_extra_ticket', label: t.community.kinds.have_extra_ticket },
+                { key: 'need_ticket', label: t.community.kinds.need_ticket },
+              ] as { key: BuddyPostKind; label: string }[]
+            ).map((k) => (
+              <button
+                key={k.key}
+                type="button"
+                onClick={() => setEditKind(k.key)}
+                className={`p-1.5 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                  editKind === k.key
+                    ? 'bg-lime-400 text-black border-lime-400'
+                    : 'bg-neutral-900 border-neutral-800 text-neutral-300'
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            maxLength={500}
+            rows={3}
+            required
+            className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 focus:border-lime-400 focus:outline-none text-white text-xs resize-none"
+          />
+          <input
+            type="text"
+            value={editMeetUpNote}
+            onChange={(e) => setEditMeetUpNote(e.target.value)}
+            placeholder={t.community.meetUpNotePlaceholder}
+            maxLength={120}
+            className="w-full px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 focus:border-lime-400 focus:outline-none text-white text-xs"
+          />
+          {editError && <p className="text-[11px] text-red-400">{editError}</p>}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={isSavingEdit}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 text-neutral-300 text-xs font-mono cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              <span>{t.community.cancel}</span>
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingEdit}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg bg-lime-400 text-black text-xs font-bold font-mono cursor-pointer disabled:opacity-50"
+            >
+              <Check className="w-3 h-3" />
+              <span>{t.community.saveChanges}</span>
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {/* Post Text (Plain text only, no HTML or auto-clickable links) */}
+          <p className="text-xs text-neutral-200 whitespace-pre-wrap leading-relaxed select-text font-normal">
+            {post.body}
+          </p>
 
-      {/* Meet-up Note */}
-      {post.meetUpNote && (
-        <div className="flex items-start gap-1.5 p-2 rounded-xl bg-neutral-950/60 border border-neutral-850 text-xs text-neutral-300">
-          <MapPin className="w-3.5 h-3.5 text-lime-400 shrink-0 mt-0.5" />
-          <span className="leading-snug">
-            <strong className="text-neutral-400 font-mono text-[10px] uppercase mr-1">Meet:</strong>
-            {post.meetUpNote}
-          </span>
-        </div>
+          {/* Meet-up Note */}
+          {post.meetUpNote && (
+            <div className="flex items-start gap-1.5 p-2 rounded-xl bg-neutral-950/60 border border-neutral-850 text-xs text-neutral-300">
+              <MapPin className="w-3.5 h-3.5 text-lime-400 shrink-0 mt-0.5" />
+              <span className="leading-snug">
+                <strong className="text-neutral-400 font-mono text-[10px] uppercase mr-1">Meet:</strong>
+                {post.meetUpNote}
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Action Footer */}
@@ -262,14 +384,24 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
           )}
 
           {/* Author actions */}
-          {isAuthor && (
-            <button
-              type="button"
-              onClick={handleToggleClose}
-              className="text-[11px] font-mono text-neutral-400 hover:text-neutral-200 underline cursor-pointer"
-            >
-              {post.status === 'open' ? t.community.closePost : 'Re-open'}
-            </button>
+          {isAuthor && !isEditing && (
+            <>
+              <button
+                type="button"
+                onClick={handleOpenEdit}
+                title={t.community.editPost}
+                className="p-1.5 text-neutral-400 hover:text-lime-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleClose}
+                className="text-[11px] font-mono text-neutral-400 hover:text-neutral-200 underline cursor-pointer"
+              >
+                {post.status === 'open' ? t.community.closePost : t.community.reopenPost}
+              </button>
+            </>
           )}
 
           {(isAuthor || isAdmin) && (
@@ -311,54 +443,67 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
       {expandedComments && (
         <div className="pt-2 space-y-3 border-t border-neutral-850 animate-in fade-in">
           {loadingComments ? (
-            <p className="text-[11px] font-mono text-neutral-500">Loading comments...</p>
-          ) : comments.length === 0 ? (
+            <p className="text-[11px] font-mono text-neutral-500">{t.community.commentsLoading}</p>
+          ) : comments.filter((c) => !blockedUids.includes(c.authorUid)).length === 0 ? (
             <p className="text-[11px] font-mono text-neutral-500">
-              No comments yet. Write one below.
+              {t.community.noCommentsYet}
             </p>
           ) : (
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {comments.map((comment) => {
-                const isCommentAuthor = user ? user.uid === comment.authorUid : false;
-                return (
-                  <div
-                    key={comment.id}
-                    className="p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-850 text-xs space-y-1"
-                  >
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-neutral-300">
-                        {comment.authorName}
-                      </span>
-                      <div className="flex items-center gap-1.5 text-neutral-500 font-mono text-[10px]">
-                        <span>{formatRelativeTime(comment.createdAt, lang)}</span>
-                        {(isCommentAuthor || isAdmin) && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteComment(comment.id)}
-                            className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                        {!isCommentAuthor && user && (
-                          <button
-                            type="button"
-                            onClick={() => onReport('comment', `buddyPosts/${post.id}/comments/${comment.id}`)}
-                            title={t.community.report}
-                            className="text-neutral-500 hover:text-amber-400 p-0.5 cursor-pointer"
-                          >
-                            <Flag className="w-3 h-3" />
-                          </button>
-                        )}
+              {comments
+                .filter((c) => !blockedUids.includes(c.authorUid))
+                .map((comment) => {
+                  const isCommentAuthor = user ? user.uid === comment.authorUid : false;
+                  return (
+                    <div
+                      key={comment.id}
+                      className="p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-850 text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-neutral-300">
+                          {comment.authorName}
+                        </span>
+                        <div className="flex items-center gap-1.5 text-neutral-500 font-mono text-[10px]">
+                          <span>{formatRelativeTime(comment.createdAt, lang)}</span>
+                          {(isCommentAuthor || isAdmin) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              title={t.community.deletePost}
+                              className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          {!isCommentAuthor && user && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onReport('comment', `buddyPosts/${post.id}/comments/${comment.id}`)}
+                                title={t.community.report}
+                                className="text-neutral-500 hover:text-amber-400 p-0.5 cursor-pointer"
+                              >
+                                <Flag className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onBlockUser(comment.authorUid)}
+                                title={t.community.block}
+                                className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                              >
+                                <UserX className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
+                      {/* Plain text comment (URLs shown as plain text only) */}
+                      <p className="text-neutral-300 whitespace-pre-wrap select-text leading-snug">
+                        {comment.body}
+                      </p>
                     </div>
-                    {/* Plain text comment */}
-                    <p className="text-neutral-300 whitespace-pre-wrap select-text leading-snug">
-                      {comment.body}
-                    </p>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
 
@@ -385,7 +530,7 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
             </form>
           ) : user && !profile ? (
             <p className="text-[11px] font-mono text-neutral-500 text-center">
-              Please complete your profile to post comments.
+              {t.community.completeProfileToComment}
             </p>
           ) : null}
 

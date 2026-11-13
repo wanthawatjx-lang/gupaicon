@@ -404,6 +404,15 @@
         "bannedBy": { "type": "string" }
       },
       "required": ["uid", "bannedAt"]
+    },
+    "block": {
+      "title": "User Block",
+      "description": "Blocked user reference stored under profiles/{uid}/blocks/{otherUid}",
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["createdAt"]
     }
   },
   "firestore": {
@@ -428,7 +437,7 @@
       "description": "Community user profiles, readable only by signed-in users"
     },
     "/profiles/{uid}/blocks/{otherUid}": {
-      "schema": "object",
+      "schema": "block",
       "description": "User blocklist subcollection"
     },
     "/buddyPosts/{postId}": {

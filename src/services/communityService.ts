@@ -303,7 +303,8 @@ export async function updateBuddyPostStatus(
 export async function updateBuddyPostBody(
   postId: string,
   body: string,
-  meetUpNote?: string
+  meetUpNote?: string,
+  kind?: BuddyPostKind
 ): Promise<void> {
   const path = `buddyPosts/${postId}`;
   const payload: Record<string, any> = {
@@ -312,6 +313,9 @@ export async function updateBuddyPostBody(
   };
   if (meetUpNote !== undefined) {
     payload.meetUpNote = meetUpNote.trim().slice(0, 120);
+  }
+  if (kind !== undefined) {
+    payload.kind = kind;
   }
 
   try {
@@ -457,6 +461,8 @@ export async function fetchContentReports(): Promise<ContentReport[]> {
         reporterUid: data.reporterUid,
         targetType: data.targetType,
         targetPath: data.targetPath,
+        chatId: data.chatId,
+        excerpt: data.excerpt,
         reason: data.reason,
         createdAt: data.createdAt,
       };

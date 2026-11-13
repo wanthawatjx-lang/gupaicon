@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, isUserAdmin } from './firebase';
 import { Venue } from './types/venue';
 import { Promoter } from './types/promoter';
@@ -38,7 +38,7 @@ import {
   isDateThisMonth,
   isEventUpcoming,
 } from './utils/dateUtils';
-import { Map as MapIcon, List as ListIcon } from 'lucide-react';
+import { Map as MapIcon, List as ListIcon, Lock, ArrowLeft } from 'lucide-react';
 
 import sampleVenues from '../data/seed/venues.json';
 import samplePromoters from '../data/seed/promoters.json';
@@ -289,9 +289,19 @@ export default function App() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.warn('Google sign-in failed:', err);
+    }
+  };
+
   const handleStartChat = (targetUid: string, targetName: string, targetEmoji?: string) => {
     if (!user) {
-      alert(lang === 'th' ? 'กรุณาเข้าสู่ระบบด้วย Google เพื่อส่งข้อความ' : 'Please sign in with Google to send messages');
+      handleGoogleSignIn();
       return;
     }
     if (!userProfile || !userProfile.ageConfirmed) {
@@ -558,6 +568,7 @@ export default function App() {
             if (v) setSelectedVenue(v);
           }
         }}
+        availableGenres={availableGenres}
         lang={lang}
       />
 
@@ -618,17 +629,48 @@ export default function App() {
       )}
 
       {/* Profile Page (#/me) */}
-      {isProfilePageOpen && user && (
-        <ProfilePage
-          user={user}
-          profile={userProfile}
-          onProfileUpdated={setUserProfile}
-          onBack={() => {
-            setIsProfilePageOpen(false);
-            window.location.hash = viewMode === 'list' ? '/list' : '';
-          }}
-          lang={lang}
-        />
+      {isProfilePageOpen && (
+        user ? (
+          <ProfilePage
+            user={user}
+            profile={userProfile}
+            onProfileUpdated={setUserProfile}
+            onBack={() => {
+              setIsProfilePageOpen(false);
+              window.location.hash = viewMode === 'list' ? '/list' : '';
+            }}
+            availableGenres={availableGenres}
+            lang={lang}
+          />
+        ) : (
+          <div className="fixed inset-0 z-1000 bg-neutral-950 text-white flex flex-col items-center justify-center p-6 animate-in fade-in">
+            <div className="w-full max-w-sm p-6 rounded-2xl bg-neutral-900 border border-neutral-800 text-center space-y-4">
+              <Lock className="w-8 h-8 text-lime-400 mx-auto" />
+              <h1 className="text-base font-bold text-white">{t.community.profileTitle}</h1>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                {t.community.signInToViewProfile}
+              </p>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                className="w-full py-2.5 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs uppercase tracking-wider transition-all cursor-pointer min-h-[44px]"
+              >
+                {t.community.signIn}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProfilePageOpen(false);
+                  window.location.hash = viewMode === 'list' ? '/list' : '';
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-mono text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>{t.community.backToMap}</span>
+              </button>
+            </div>
+          </div>
+        )
       )}
 
       {/* Direct Messages Page (#/messages) */}
@@ -677,6 +719,7 @@ export default function App() {
             setUserProfile(p);
             setIsProfileModalOpen(false);
           }}
+          availableGenres={availableGenres.length > 0 ? availableGenres : undefined}
           lang={lang}
         />
       )}

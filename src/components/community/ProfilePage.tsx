@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { UserProfile } from '../../types/community';
-import { deleteUserProfileAndData } from '../../services/communityService';
+import { deleteUserProfileAndData, checkIsBanned } from '../../services/communityService';
 import { ChooseProfileModal } from './ChooseProfileModal';
 import { Language, translations } from '../../i18n';
 import {
@@ -9,8 +9,8 @@ import {
   Edit3,
   Trash2,
   ShieldCheck,
-  Calendar,
   AlertTriangle,
+  Ban,
 } from 'lucide-react';
 
 interface ProfilePageProps {
@@ -19,6 +19,7 @@ interface ProfilePageProps {
   onProfileUpdated: (p: UserProfile | null) => void;
   onBack: () => void;
   lang: Language;
+  availableGenres?: string[];
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -27,22 +28,34 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onProfileUpdated,
   onBack,
   lang,
+  availableGenres,
 }) => {
   const t = translations[lang];
 
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isBanned, setIsBanned] = useState(false);
+
+  useEffect(() => {
+    checkIsBanned(user.uid).then(setIsBanned).catch(() => {});
+  }, [user.uid]);
 
   const handleDeleteProfile = async () => {
-    if (!window.confirm(t.community.deleteProfileConfirm)) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteUserProfileAndData(user.uid);
       onProfileUpdated(null);
       onBack();
     } catch (err) {
       console.error('Failed to delete profile:', err);
-      alert('Could not delete profile. Please try again.');
+      setDeleteError(
+        lang === 'th'
+          ? 'ไม่สามารถลบโปรไฟล์ได้ กรุณาลองใหม่อีกครั้ง'
+          : 'Could not delete profile. Please try again.'
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -68,15 +81,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
       {/* Profile Body */}
       <main className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full space-y-5">
+        {isBanned && (
+          <div className="p-3.5 rounded-2xl bg-red-950/40 border border-red-700/60 flex items-center gap-2.5 text-xs text-red-300">
+            <Ban className="w-4 h-4 text-red-400 shrink-0" />
+            <span>{t.community.bannedMessage}</span>
+          </div>
+        )}
+
         {!profile ? (
           <div className="p-6 rounded-2xl bg-neutral-900/80 border border-neutral-800 text-center space-y-3">
             <p className="text-sm text-neutral-300">
-              You do not have a community profile yet.
+              {lang === 'th'
+                ? 'คุณยังไม่มีโปรไฟล์คอมมูนิตี้'
+                : 'You do not have a community profile yet.'}
             </p>
             <button
               type="button"
               onClick={() => setIsEditOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs uppercase tracking-wider transition-all"
+              className="px-5 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
             >
               {t.community.chooseNameTitle}
             </button>
@@ -156,7 +178,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
 
             {/* Danger Zone: Delete My Profile & Posts */}
-            <div className="p-4 rounded-2xl bg-red-950/20 border border-red-900/40 space-y-2.5">
+            <div className="p-4 rounded-2xl bg-red-950/20 border border-red-900/40 space-y-3">
               <div className="flex items-center gap-2 text-red-400 text-xs font-bold uppercase tracking-wider">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>Danger Zone</span>
@@ -166,15 +188,48 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   ? 'ลบโปรไฟล์ของคุณพร้อมกับคำขอหาเพื่อนทั้งหมดอย่างถาวร'
                   : 'Permanently remove your community profile and all buddy requests created under your account.'}
               </p>
-              <button
-                type="button"
-                onClick={handleDeleteProfile}
-                disabled={isDeleting}
-                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/60 font-bold text-xs tracking-wide transition-all cursor-pointer min-h-[44px]"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>{isDeleting ? 'Deleting...' : t.community.deleteProfileAndPosts}</span>
-              </button>
+
+              {deleteError && (
+                <p className="text-xs text-red-300 bg-red-950/60 p-2 rounded-lg border border-red-800">
+                  {deleteError}
+                </p>
+              )}
+
+              {!confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={isDeleting}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-700/60 font-bold text-xs tracking-wide transition-all cursor-pointer min-h-[44px]"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{t.community.deleteProfileAndPosts}</span>
+                </button>
+              ) : (
+                <div className="p-3 rounded-xl bg-red-950/60 border border-red-700/80 space-y-2.5">
+                  <p className="text-xs text-red-200 leading-snug">
+                    {t.community.deleteProfileConfirm}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={isDeleting}
+                      className="flex-1 py-2 px-3 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold cursor-pointer"
+                    >
+                      {t.community.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteProfile}
+                      disabled={isDeleting}
+                      className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeleting ? '...' : t.community.deletePost}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -192,6 +247,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             setIsEditOpen(false);
           }}
           lang={lang}
+          availableGenres={availableGenres && availableGenres.length > 0 ? availableGenres : undefined}
         />
       )}
     </div>
