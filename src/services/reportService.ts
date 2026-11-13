@@ -4,12 +4,10 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  onSnapshot,
   query,
   orderBy,
   limit,
   serverTimestamp,
-  Timestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { CrowdReport, CrowdReportStatus } from '../types/event';
@@ -20,35 +18,24 @@ import { CrowdReport, CrowdReportStatus } from '../types/event';
 const getReportsCollectionPath = (eventId: string) => `events/${eventId}/reports`;
 
 /**
- * Fetch / subscribe to crowd reports for a specific event (limit 50, last 90 minutes)
- * Keeps Firestore reads low (Requirement 5)
+ * Fetch crowd reports once for a specific event (limit 50, newest first).
+ * Keeps Firestore reads low without holding open a realtime listener.
  */
-export function subscribeToEventReports(
-  eventId: string,
-  onData: (reports: CrowdReport[]) => void,
-  onError?: (error: Error) => void
-): () => void {
+export async function fetchEventReports(eventId: string): Promise<CrowdReport[]> {
   const reportsRef = collection(db, getReportsCollectionPath(eventId));
   const reportsQuery = query(reportsRef, orderBy('createdAt', 'desc'), limit(50));
-
-  return onSnapshot(
-    reportsQuery,
-    (snapshot) => {
-      const reports: CrowdReport[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          status: (data.status as CrowdReportStatus) || 'available',
-          createdAt: data.createdAt,
-        };
-      });
-      onData(reports);
-    },
-    (error) => {
-      console.error('Error listening to event reports:', error);
-      if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, getReportsCollectionPath(eventId));
-    }
-  );
+  try {
+    const snapshot = await getDocs(reportsQuery);
+    return snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        status: (data.status as CrowdReportStatus) || 'available',
+        createdAt: data.createdAt,
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, getReportsCollectionPath(eventId));
+  }
 }
 
 /**
@@ -73,10 +60,13 @@ export async function submitCrowdReport(
 }
 
 /**
- * Delete all crowd reports for an event (Admin spam cleanup - Requirement 7)
+ * Delete crowd reports for an event (Admin spam cleanup, bounded batch of 200)
  */
 export async function deleteAllEventReports(eventId: string): Promise<number> {
-  const reportsColRef = collection(db, getReportsCollectionPath(eventId));
+  const reportsColRef = query(
+    collection(db, getReportsCollectionPath(eventId)),
+    limit(200)
+  );
   try {
     const snapshot = await getDocs(reportsColRef);
     let deletedCount = 0;

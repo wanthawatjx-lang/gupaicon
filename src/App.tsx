@@ -3,30 +3,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, isUserAdmin } from './firebase';
 import { Venue } from './types/venue';
 import { Promoter } from './types/promoter';
 import { ConcertEvent, DateFilter } from './types/event';
-import { subscribeToVenues } from './services/venueService';
-import { subscribeToPromoters } from './services/promoterService';
-import { subscribeToEvents } from './services/eventService';
+import { fetchVenues } from './services/venueService';
+import { fetchPromoters } from './services/promoterService';
+import { fetchEvents } from './services/eventService';
 import { Map } from './components/Map';
 import { Header } from './components/Header';
 import { FilterBar } from './components/FilterBar';
 import { ListView } from './components/ListView';
 import { VenueBottomSheet } from './components/VenueBottomSheet';
 import { EventDetailSheet } from './components/EventDetailSheet';
-import { AdminPanel } from './components/AdminPanel';
 import { VenueListDrawer } from './components/VenueListDrawer';
 import { Footer } from './components/Footer';
-import { PrivacyPage } from './components/PrivacyPage';
 import { StatusBanners } from './components/StatusBanners';
-import { BuddyBoardPage } from './components/community/BuddyBoardPage';
-import { ProfilePage } from './components/community/ProfilePage';
 import { ChooseProfileModal } from './components/community/ChooseProfileModal';
-import { MessagesPage } from './components/chat/MessagesPage';
 import { StartChatModal } from './components/chat/StartChatModal';
 import { UserProfile } from './types/community';
 import { fetchUserProfile } from './services/communityService';
@@ -38,11 +33,28 @@ import {
   isDateThisMonth,
   isEventUpcoming,
 } from './utils/dateUtils';
-import { Map as MapIcon, List as ListIcon, Lock, ArrowLeft } from 'lucide-react';
+import { Map as MapIcon, List as ListIcon, Lock, ArrowLeft, RefreshCw } from 'lucide-react';
 
 import sampleVenues from '../data/seed/venues.json';
 import samplePromoters from '../data/seed/promoters.json';
 import sampleEvents from '../data/seed/events.json';
+
+// Lazy-loaded heavy overlays for faster mobile initial load
+const AdminPanel = lazy(() =>
+  import('./components/AdminPanel').then((m) => ({ default: m.AdminPanel }))
+);
+const PrivacyPage = lazy(() =>
+  import('./components/PrivacyPage').then((m) => ({ default: m.PrivacyPage }))
+);
+const BuddyBoardPage = lazy(() =>
+  import('./components/community/BuddyBoardPage').then((m) => ({ default: m.BuddyBoardPage }))
+);
+const ProfilePage = lazy(() =>
+  import('./components/community/ProfilePage').then((m) => ({ default: m.ProfilePage }))
+);
+const MessagesPage = lazy(() =>
+  import('./components/chat/MessagesPage').then((m) => ({ default: m.MessagesPage }))
+);
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -97,9 +109,9 @@ export default function App() {
 
   // Loading state & Firestore error tracking
   const [loadingVenues, setLoadingVenues] = useState(true);
-  const [loadingPromoters, setLoadingPromoters] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [firestoreError, setFirestoreError] = useState(false);
+  const [firestoreErrorType, setFirestoreErrorType] = useState<'permission' | 'generic' | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [authReady, setAuthReady] = useState(false);
 
@@ -118,15 +130,14 @@ export default function App() {
             if (!p) {
               setIsProfileModalOpen(true);
             }
-          } catch (err) {
-            console.warn('Failed to load profile on auth:', err);
+          } catch {
+            // Ignore transient profile check failure on startup
           }
         } else {
           setUserProfile(null);
         }
       },
-      (error) => {
-        console.warn('Auth state error:', error);
+      () => {
         setUser(null);
         setUserProfile(null);
         setAuthReady(true);
@@ -135,55 +146,44 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 1. Subscribe to Venues Collection
+  // Bounded one-time initial load for Venues, Promoters, and Upcoming Events
   useEffect(() => {
     if (!authReady) return;
-    setLoadingVenues(true);
-    const unsubscribe = subscribeToVenues(
-      (data) => {
-        setVenues(data);
-        setLoadingVenues(false);
-      },
-      () => {
-        setLoadingVenues(false);
-        setFirestoreError(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [authReady, retryKey]);
+    let cancelled = false;
 
-  // 2. Subscribe to Promoters Collection
-  useEffect(() => {
-    if (!authReady) return;
-    setLoadingPromoters(true);
-    const unsubscribe = subscribeToPromoters(
-      (data) => {
-        setPromoters(data);
-        setLoadingPromoters(false);
-      },
-      () => {
-        setLoadingPromoters(false);
-        setFirestoreError(true);
-      }
-    );
-    return () => unsubscribe();
-  }, [authReady, retryKey]);
+    const loadInitialCollections = async () => {
+      setLoadingVenues(true);
+      setLoadingEvents(true);
+      setFirestoreError(false);
+      setFirestoreErrorType(null);
 
-  // 3. Subscribe to Events Collection (Bounded query with limit 80)
-  useEffect(() => {
-    if (!authReady) return;
-    setLoadingEvents(true);
-    const unsubscribe = subscribeToEvents(
-      (data) => {
-        setEvents(data);
-        setLoadingEvents(false);
-      },
-      () => {
-        setLoadingEvents(false);
+      try {
+        const [vData, pData, eData] = await Promise.all([
+          fetchVenues(),
+          fetchPromoters(),
+          fetchEvents(),
+        ]);
+        if (cancelled) return;
+        setVenues(vData);
+        setPromoters(pData);
+        setEvents(eData);
+      } catch (err: any) {
+        if (cancelled) return;
+        const msg = String(err?.message || err?.code || '').toLowerCase();
         setFirestoreError(true);
+        setFirestoreErrorType(msg.includes('permission') ? 'permission' : 'generic');
+      } finally {
+        if (!cancelled) {
+          setLoadingVenues(false);
+          setLoadingEvents(false);
+        }
       }
-    );
-    return () => unsubscribe();
+    };
+
+    loadInitialCollections();
+    return () => {
+      cancelled = true;
+    };
   }, [authReady, retryKey]);
 
   // Active display collections: live Firestore data or seed samples fallback
@@ -502,11 +502,11 @@ export default function App() {
       </main>
 
       {/* Floating Switch Button between Map and List View (Requirement 4) */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-600 pointer-events-auto">
+      <div className="fixed bottom-[76px] sm:bottom-6 left-1/2 -translate-x-1/2 z-600 pointer-events-auto">
         <button
           type="button"
           onClick={handleToggleViewMode}
-          className="flex items-center gap-2.5 px-5 py-3 rounded-full bg-neutral-900/95 hover:bg-neutral-850 text-white font-bold text-xs tracking-wider uppercase border border-neutral-700/80 shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer hover:border-lime-400 group"
+          className="flex items-center gap-2.5 px-5 py-2.5 min-h-[44px] rounded-full bg-neutral-900/95 hover:bg-neutral-850 text-white font-bold text-xs tracking-wider uppercase border border-neutral-700/80 shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer hover:border-lime-400 group"
           aria-label={viewMode === 'map' ? t.app.listView : t.app.mapView}
         >
           {viewMode === 'map' ? (
@@ -576,6 +576,7 @@ export default function App() {
       <StatusBanners
         lang={lang}
         hasError={firestoreError}
+        errorType={firestoreErrorType}
         onRetry={handleRetry}
       />
 
@@ -598,50 +599,77 @@ export default function App() {
       {/* Small Disclaimer Footer with Privacy Policy link */}
       <Footer lang={lang} onOpenPrivacy={handleOpenPrivacy} />
 
-      {/* Privacy Policy Page Modal */}
+      {/* Privacy Policy Page Modal (Lazy-loaded) */}
       {isPrivacyOpen && (
-        <PrivacyPage lang={lang} onBack={handleClosePrivacy} />
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-1000 bg-neutral-950/95 flex items-center justify-center text-xs font-mono text-neutral-300 gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-lime-400" />
+              <span>{lang === 'th' ? 'กำลังโหลด...' : 'Loading...'}</span>
+            </div>
+          }
+        >
+          <PrivacyPage lang={lang} onBack={handleClosePrivacy} />
+        </Suspense>
       )}
 
-      {/* Buddy Board Page (#/buddies) */}
+      {/* Buddy Board Page (#/buddies, Lazy-loaded) */}
       {isBuddiesPageOpen && (
-        <BuddyBoardPage
-          user={user}
-          profile={userProfile}
-          events={activeEvents}
-          onOpenEvent={(evtId) => {
-            const ev = activeEvents.find((e) => e.id === evtId);
-            if (ev) {
-              setSelectedEvent(ev);
-              setIsBuddiesPageOpen(false);
-              window.location.hash = `/event/${evtId}`;
-            }
-          }}
-          onBack={() => {
-            setIsBuddiesPageOpen(false);
-            window.location.hash = viewMode === 'list' ? '/list' : '';
-          }}
-          onRequestProfile={() => setIsProfileModalOpen(true)}
-          onStartChat={handleStartChat}
-          lang={lang}
-          isAdmin={isAdmin}
-        />
-      )}
-
-      {/* Profile Page (#/me) */}
-      {isProfilePageOpen && (
-        user ? (
-          <ProfilePage
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-1000 bg-neutral-950/95 flex items-center justify-center text-xs font-mono text-neutral-300 gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-lime-400" />
+              <span>{t.community.loadingBuddies}</span>
+            </div>
+          }
+        >
+          <BuddyBoardPage
             user={user}
             profile={userProfile}
-            onProfileUpdated={setUserProfile}
+            events={activeEvents}
+            onOpenEvent={(evtId) => {
+              const ev = activeEvents.find((e) => e.id === evtId);
+              if (ev) {
+                setSelectedEvent(ev);
+                setIsBuddiesPageOpen(false);
+                window.location.hash = `/event/${evtId}`;
+              }
+            }}
             onBack={() => {
-              setIsProfilePageOpen(false);
+              setIsBuddiesPageOpen(false);
               window.location.hash = viewMode === 'list' ? '/list' : '';
             }}
-            availableGenres={availableGenres}
+            onRequestProfile={() => setIsProfileModalOpen(true)}
+            onStartChat={handleStartChat}
             lang={lang}
+            isAdmin={isAdmin}
           />
+        </Suspense>
+      )}
+
+      {/* Profile Page (#/me, Lazy-loaded) */}
+      {isProfilePageOpen && (
+        user ? (
+          <Suspense
+            fallback={
+              <div className="fixed inset-0 z-1000 bg-neutral-950/95 flex items-center justify-center text-xs font-mono text-neutral-300 gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-lime-400" />
+                <span>{lang === 'th' ? 'กำลังโหลด...' : 'Loading...'}</span>
+              </div>
+            }
+          >
+            <ProfilePage
+              user={user}
+              profile={userProfile}
+              onProfileUpdated={setUserProfile}
+              onBack={() => {
+                setIsProfilePageOpen(false);
+                window.location.hash = viewMode === 'list' ? '/list' : '';
+              }}
+              availableGenres={availableGenres}
+              lang={lang}
+            />
+          </Suspense>
         ) : (
           <div className="fixed inset-0 z-1000 bg-neutral-950 text-white flex flex-col items-center justify-center p-6 animate-in fade-in">
             <div className="w-full max-w-sm p-6 rounded-2xl bg-neutral-900 border border-neutral-800 text-center space-y-4">
@@ -663,7 +691,7 @@ export default function App() {
                   setIsProfilePageOpen(false);
                   window.location.hash = viewMode === 'list' ? '/list' : '';
                 }}
-                className="inline-flex items-center gap-1.5 text-xs font-mono text-neutral-400 hover:text-white cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs font-mono text-neutral-400 hover:text-white cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>{t.community.backToMap}</span>
@@ -673,20 +701,29 @@ export default function App() {
         )
       )}
 
-      {/* Direct Messages Page (#/messages) */}
+      {/* Direct Messages Page (#/messages, Lazy-loaded) */}
       {isMessagesPageOpen && (
-        <MessagesPage
-          user={user}
-          userProfile={userProfile}
-          lang={lang}
-          initialChatId={activeChatId}
-          onBackToMap={() => {
-            setIsMessagesPageOpen(false);
-            setActiveChatId(null);
-            window.location.hash = viewMode === 'list' ? '/list' : '';
-          }}
-          onOpenProfileSetup={() => setIsProfileModalOpen(true)}
-        />
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-2000 bg-black/95 flex items-center justify-center text-xs font-mono text-neutral-300 gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-lime-400" />
+              <span>{t.chat.loading}</span>
+            </div>
+          }
+        >
+          <MessagesPage
+            user={user}
+            userProfile={userProfile}
+            lang={lang}
+            initialChatId={activeChatId}
+            onBackToMap={() => {
+              setIsMessagesPageOpen(false);
+              setActiveChatId(null);
+              window.location.hash = viewMode === 'list' ? '/list' : '';
+            }}
+            onOpenProfileSetup={() => setIsProfileModalOpen(true)}
+          />
+        </Suspense>
       )}
 
       {/* Start Chat Request Modal */}
@@ -724,16 +761,26 @@ export default function App() {
         />
       )}
 
-      {/* Admin Panel (English console strictly restricted to wanthawatjx@gmail.com) */}
+      {/* Admin Panel (Lazy-loaded, English console strictly restricted to wanthawatjx@gmail.com) */}
       {isAdminOpen && (
-        <AdminPanel
-          user={user}
-          venues={activeVenues}
-          promoters={activePromoters}
-          events={activeEvents}
-          onClose={handleCloseAdmin}
-          editingVenueInitial={editingVenue}
-        />
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-2000 bg-neutral-950/95 flex items-center justify-center text-xs font-mono text-neutral-300 gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-lime-400" />
+              <span>Loading Admin Console...</span>
+            </div>
+          }
+        >
+          <AdminPanel
+            user={user}
+            venues={activeVenues}
+            promoters={activePromoters}
+            events={activeEvents}
+            onClose={handleCloseAdmin}
+            editingVenueInitial={editingVenue}
+            onDataChanged={handleRetry}
+          />
+        </Suspense>
       )}
     </div>
   );

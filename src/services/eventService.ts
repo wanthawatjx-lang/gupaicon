@@ -5,8 +5,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
   query,
+  where,
   orderBy,
   limit,
   serverTimestamp,
@@ -18,57 +18,14 @@ import sampleEvents from '../../data/seed/events.json';
 
 const COLLECTION_NAME = 'events';
 
-export function subscribeToEvents(
-  onData: (events: ConcertEvent[]) => void,
-  onError?: (error: Error) => void
-): () => void {
-  // Read with bounded query: order by startAt and limit 80 to protect quota
-  const eventsQuery = query(
-    collection(db, COLLECTION_NAME),
-    orderBy('startAt', 'asc'),
-    limit(80)
-  );
-
-  return onSnapshot(
-    eventsQuery,
-    (snapshot) => {
-      const events: ConcertEvent[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          title: data.title ?? '',
-          artists: Array.isArray(data.artists) ? data.artists : [],
-          venueId: data.venueId ?? '',
-          promoterId: data.promoterId ?? '',
-          startAt: data.startAt,
-          priceText: data.priceText ?? '',
-          genres: Array.isArray(data.genres) ? data.genres : [],
-          ticketUrl: data.ticketUrl ?? '',
-          igPostUrl: data.igPostUrl ?? '',
-          posterUrl: data.posterUrl ?? '',
-          status: (data.status as EventStatus) || 'notopen',
-          statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-          statusSource: 'admin',
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        };
-      });
-      onData(events);
-    },
-    (error) => {
-      console.error('Error listening to events query:', error);
-      if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
-    }
-  );
-}
-
 export async function fetchEvents(): Promise<ConcertEvent[]> {
   try {
+    const cutoff = Timestamp.fromDate(new Date(Date.now() - 4 * 60 * 60 * 1000));
     const eventsQuery = query(
       collection(db, COLLECTION_NAME),
+      where('startAt', '>=', cutoff),
       orderBy('startAt', 'asc'),
-      limit(80)
+      limit(60)
     );
     const snapshot = await getDocs(eventsQuery);
     return snapshot.docs.map((docSnap) => {
@@ -87,7 +44,9 @@ export async function fetchEvents(): Promise<ConcertEvent[]> {
         posterUrl: data.posterUrl ?? '',
         status: (data.status as EventStatus) || 'notopen',
         statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
-        statusSource: 'admin',
+        statusSource: data.statusSource === 'organizer' ? 'organizer' : 'admin',
+        origin: data.origin,
+        sourceUrl: data.sourceUrl ?? '',
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
       };

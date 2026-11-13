@@ -5,7 +5,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
+  query,
+  limit,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
@@ -16,46 +17,36 @@ import { EventStatus } from '../types/event';
 const COLLECTION_NAME = 'eventDrafts';
 const EVENTS_COLLECTION = 'events';
 
-export function subscribeToEventDrafts(
-  onData: (drafts: EventDraft[]) => void,
-  onError?: (error: Error) => void
-): () => void {
-  const ref = collection(db, COLLECTION_NAME);
-
-  return onSnapshot(
-    ref,
-    (snapshot) => {
-      const items: EventDraft[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          title: data.title ?? '',
-          artists: data.artists ?? [],
-          venueName: data.venueName ?? '',
-          promoterName: data.promoterName || null,
-          startAt: data.startAt ?? new Date().toISOString(),
-          priceText: data.priceText || null,
-          genres: data.genres ?? [],
-          ticketUrl: data.ticketUrl || null,
-          sourceUrl: data.sourceUrl ?? '',
-          sourceName: data.sourceName ?? '',
-          confidence: Number(data.confidence ?? 0.5),
-          notes: data.notes || null,
-          warnings: data.warnings ?? [],
-          matchedVenueId: data.matchedVenueId || null,
-          fingerprint: data.fingerprint ?? '',
-          reviewStatus: data.reviewStatus ?? 'pending',
-          createdAt: data.createdAt,
-        };
-      });
-      onData(items);
-    },
-    (error) => {
-      console.error('Error listening to event drafts snapshot:', error);
-      if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
-    }
-  );
+export async function fetchEventDrafts(): Promise<EventDraft[]> {
+  try {
+    const q = query(collection(db, COLLECTION_NAME), limit(100));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        title: data.title ?? '',
+        artists: data.artists ?? [],
+        venueName: data.venueName ?? '',
+        promoterName: data.promoterName || null,
+        startAt: data.startAt ?? new Date().toISOString(),
+        priceText: data.priceText || null,
+        genres: data.genres ?? [],
+        ticketUrl: data.ticketUrl || null,
+        sourceUrl: data.sourceUrl ?? '',
+        sourceName: data.sourceName ?? '',
+        confidence: Number(data.confidence ?? 0.5),
+        notes: data.notes || null,
+        warnings: data.warnings ?? [],
+        matchedVenueId: data.matchedVenueId || null,
+        fingerprint: data.fingerprint ?? '',
+        reviewStatus: data.reviewStatus ?? 'pending',
+        createdAt: data.createdAt,
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
+  }
 }
 
 export async function updateEventDraft(id: string, data: Partial<EventDraft>): Promise<void> {

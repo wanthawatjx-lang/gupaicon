@@ -38,6 +38,8 @@ import { AiReviewAdmin } from './admin/AiReviewAdmin';
 import { CsvImportAdmin } from './admin/CsvImportAdmin';
 import { ModerationTab } from './admin/ModerationTab';
 
+import { safeExternalUrl } from '../utils/urlUtils';
+
 interface AdminPanelProps {
   user: User | null;
   venues: Venue[];
@@ -45,6 +47,7 @@ interface AdminPanelProps {
   events: ConcertEvent[];
   onClose: () => void;
   editingVenueInitial?: Venue | null;
+  onDataChanged?: () => void;
 }
 
 type AdminTab = 'events' | 'venues' | 'promoters' | 'sources' | 'ai-review' | 'import' | 'moderation';
@@ -56,6 +59,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   events,
   onClose,
   editingVenueInitial = null,
+  onDataChanged,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>(editingVenueInitial ? 'venues' : 'events');
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -155,8 +159,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSuccessMessage(
         `Seeded ${venuesCount} venues, ${promotersCount} promoters, and ${eventsCount} events successfully!`
       );
+      onDataChanged?.();
     } catch (err: any) {
-      console.error('Seed all error:', err);
       setErrorMessage(err?.message || 'Failed to seed sample data. Verify admin permissions.');
     } finally {
       setIsSeedingAll(false);
@@ -171,8 +175,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const eventsCount = await seedSampleEvents();
       setSuccessMessage(`Seeded ${eventsCount} sample events (SAMPLE) successfully!`);
+      onDataChanged?.();
     } catch (err: any) {
-      console.error('Seed events error:', err);
       setErrorMessage(err?.message || 'Failed to seed sample events. Verify admin permissions.');
     } finally {
       setIsSeedingEvents(false);
@@ -186,8 +190,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       await updateEventStatus(eventId, newStatus, 'admin');
       setSuccessMessage(`Updated event status to "${STATUS_MAP[newStatus].label}"`);
+      onDataChanged?.();
     } catch (err: any) {
-      console.error('Failed to update event status:', err);
       setErrorMessage(err?.message || 'Failed to update event status.');
     } finally {
       setStatusUpdatingId(null);
@@ -243,6 +247,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setSuccessMessage(`Created venue "${venueFormData.name}"!`);
       }
       setIsVenueFormOpen(false);
+      onDataChanged?.();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to save venue.');
     } finally {
@@ -282,6 +287,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setSuccessMessage(`Created promoter "${promoterFormData.name}"!`);
       }
       setIsPromoterFormOpen(false);
+      onDataChanged?.();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to save promoter.');
     } finally {
@@ -356,6 +362,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setSuccessMessage(`Created event "${eventFormData.title}"!`);
       }
       setIsEventFormOpen(false);
+      onDataChanged?.();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to save event.');
     } finally {
@@ -378,6 +385,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       setSuccessMessage(`Deleted ${deleteTarget.type} successfully.`);
       setDeleteTarget(null);
+      onDataChanged?.();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to delete item.');
     } finally {
@@ -1474,9 +1482,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   </span>
                                 )}
                               </div>
-                              {p.igUrl && (
+                              {safeExternalUrl(p.igUrl) && (
                                 <a
-                                  href={p.igUrl}
+                                  href={safeExternalUrl(p.igUrl)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-xs text-neutral-400 hover:text-pink-400 flex items-center gap-1 truncate"
@@ -1522,10 +1530,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {activeTab === 'sources' && <SourcesAdmin venues={venues} lang="en" />}
 
               {/* ==================== TAB 5: AI REVIEW ==================== */}
-              {activeTab === 'ai-review' && <AiReviewAdmin user={user} venues={venues} lang="en" />}
+              {activeTab === 'ai-review' && <AiReviewAdmin user={user} venues={venues} lang="en" onDataChanged={onDataChanged} />}
 
               {/* ==================== TAB 6: IMPORT ==================== */}
-              {activeTab === 'import' && <CsvImportAdmin onDataChanged={() => {}} />}
+              {activeTab === 'import' && <CsvImportAdmin onDataChanged={() => onDataChanged?.()} />}
               {activeTab === 'moderation' && <ModerationTab />}
             </div>
           )}

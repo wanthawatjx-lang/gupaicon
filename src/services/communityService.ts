@@ -147,8 +147,10 @@ export async function deleteUserProfileAndData(uid: string): Promise<void> {
       await deleteDoc(postDoc.ref).catch(() => {});
     }
 
-    // 3. Delete block entries
-    const blocksSnap = await getDocs(collection(db, 'profiles', uid, 'blocks')).catch(() => null);
+    // 3. Delete block entries (bounded)
+    const blocksSnap = await getDocs(
+      query(collection(db, 'profiles', uid, 'blocks'), limit(100))
+    ).catch(() => null);
     if (blocksSnap) {
       for (const b of blocksSnap.docs) {
         await deleteDoc(b.ref).catch(() => {});
@@ -419,7 +421,7 @@ export async function unblockUser(myUid: string, otherUid: string): Promise<void
 
 export async function fetchBlockedUids(myUid: string): Promise<string[]> {
   try {
-    const snap = await getDocs(collection(db, 'profiles', myUid, 'blocks'));
+    const snap = await getDocs(query(collection(db, 'profiles', myUid, 'blocks'), limit(100)));
     return snap.docs.map((d) => d.id);
   } catch {
     return [];

@@ -5,7 +5,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
+  query,
+  limit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -13,36 +14,26 @@ import { Source, SourceFormData } from '../types/source';
 
 const COLLECTION_NAME = 'sources';
 
-export function subscribeToSources(
-  onData: (sources: Source[]) => void,
-  onError?: (error: Error) => void
-): () => void {
-  const ref = collection(db, COLLECTION_NAME);
-
-  return onSnapshot(
-    ref,
-    (snapshot) => {
-      const items: Source[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          name: data.name ?? '',
-          type: data.type ?? 'search_query',
-          value: data.value ?? '',
-          venueId: data.venueId || undefined,
-          active: data.active ?? true,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        };
-      });
-      onData(items);
-    },
-    (error) => {
-      console.error('Error listening to sources snapshot:', error);
-      if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
-    }
-  );
+export async function fetchSources(): Promise<Source[]> {
+  try {
+    const q = query(collection(db, COLLECTION_NAME), limit(100));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        name: data.name ?? '',
+        type: data.type ?? 'search_query',
+        value: data.value ?? '',
+        venueId: data.venueId || undefined,
+        active: data.active ?? true,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
+  }
 }
 
 export async function createSource(data: SourceFormData): Promise<string> {

@@ -45,7 +45,7 @@ export const ListView: React.FC<ListViewProps> = ({
   );
 
   return (
-    <div className="w-full h-full pt-32 pb-24 px-4 overflow-y-auto max-w-2xl mx-auto">
+    <div className="w-full h-full pt-40 sm:pt-36 pb-28 px-4 overflow-y-auto max-w-2xl mx-auto">
       {/* Skeleton Loading State */}
       {loading && (
         <div className="space-y-3">
@@ -82,7 +82,7 @@ export const ListView: React.FC<ListViewProps> = ({
           <button
             type="button"
             onClick={onClearFilters}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wide transition-all active:scale-95 cursor-pointer shadow-lg shadow-lime-400/20"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wide transition-all active:scale-95 cursor-pointer shadow-lg shadow-lime-400/20"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>{t.filters.clearFilters}</span>

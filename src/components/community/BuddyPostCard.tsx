@@ -82,6 +82,11 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
     name: string;
     emoji?: string;
   } | null>(null);
+  const [inlineConfirm, setInlineConfirm] = useState<
+    | { type: 'deletePost' }
+    | { type: 'block'; targetUid: string }
+    | null
+  >(null);
 
   const isAuthor = user ? user.uid === post.authorUid : false;
   const canMessage = Boolean(user && profile?.ageConfirmed);
@@ -89,11 +94,12 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
   const handleToggleComments = async () => {
     if (!expandedComments && comments.length === 0) {
       setLoadingComments(true);
+      setCommentError(null);
       try {
         const list = await fetchComments(post.id, 30);
         setComments(list);
-      } catch (err) {
-        console.error('Failed to load comments:', err);
+      } catch {
+        setCommentError(t.states.errorMessage);
       } finally {
         setLoadingComments(false);
       }
@@ -154,14 +160,14 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
     }
   };
 
-  const handleDeletePost = async () => {
+  const handleDeletePostConfirmed = async () => {
     if (!isAuthor && !isAdmin) return;
-    if (!window.confirm(t.community.deletePostConfirm)) return;
     try {
       await deleteBuddyPost(post.id);
+      setInlineConfirm(null);
       if (onPostDeleted) onPostDeleted();
-    } catch (err) {
-      console.error('Failed to delete post:', err);
+    } catch {
+      setEditError(t.states.errorMessage);
     }
   };
 
@@ -363,12 +369,46 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
             <div className="flex items-start gap-1.5 p-2 rounded-xl bg-neutral-950/60 border border-neutral-850 text-xs text-neutral-300">
               <MapPin className="w-3.5 h-3.5 text-lime-400 shrink-0 mt-0.5" />
               <span className="leading-snug">
-                <strong className="text-neutral-400 font-mono text-[10px] uppercase mr-1">Meet:</strong>
+                <strong className="text-neutral-400 font-mono text-[10px] uppercase mr-1">{t.community.meetLabel}</strong>
                 {post.meetUpNote}
               </span>
             </div>
           )}
         </>
+      )}
+
+      {/* Inline Confirmation Bar (Delete post or Block user) */}
+      {inlineConfirm && (
+        <div className="p-2.5 rounded-xl bg-red-950/50 border border-red-800/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="text-red-200">
+            {inlineConfirm.type === 'deletePost'
+              ? t.community.deletePostConfirm
+              : t.community.blockConfirm}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setInlineConfirm(null)}
+              className="px-3 py-1.5 min-h-[36px] rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-mono text-xs cursor-pointer"
+            >
+              {t.community.cancel}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (inlineConfirm.type === 'deletePost') {
+                  handleDeletePostConfirmed();
+                } else {
+                  onBlockUser(inlineConfirm.targetUid);
+                  setInlineConfirm(null);
+                }
+              }}
+              className="px-3 py-1.5 min-h-[36px] rounded-lg bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs cursor-pointer"
+            >
+              {inlineConfirm.type === 'deletePost' ? t.community.deletePost : t.community.block}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Action Footer */}
@@ -417,14 +457,15 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
                 type="button"
                 onClick={handleOpenEdit}
                 title={t.community.editPost}
-                className="p-1.5 text-neutral-400 hover:text-lime-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+                aria-label={t.community.editPost}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-neutral-400 hover:text-lime-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={handleToggleClose}
-                className="text-[11px] font-mono text-neutral-400 hover:text-neutral-200 underline cursor-pointer"
+                className="min-h-[36px] px-1.5 text-[11px] font-mono text-neutral-400 hover:text-neutral-200 underline cursor-pointer"
               >
                 {post.status === 'open' ? t.community.closePost : t.community.reopenPost}
               </button>
@@ -434,9 +475,10 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
           {(isAuthor || isAdmin) && (
             <button
               type="button"
-              onClick={handleDeletePost}
+              onClick={() => setInlineConfirm({ type: 'deletePost' })}
               title={t.community.deletePost}
-              className="p-1.5 text-neutral-500 hover:text-red-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+              aria-label={t.community.deletePost}
+              className="min-h-[36px] min-w-[36px] flex items-center justify-center text-neutral-400 hover:text-red-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -449,15 +491,17 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
                 type="button"
                 onClick={() => onReport('post', `buddyPosts/${post.id}`)}
                 title={t.community.report}
-                className="p-1.5 text-neutral-500 hover:text-amber-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+                aria-label={t.community.report}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-neutral-400 hover:text-amber-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
               >
                 <Flag className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
-                onClick={() => onBlockUser(post.authorUid)}
+                onClick={() => setInlineConfirm({ type: 'block', targetUid: post.authorUid })}
                 title={t.community.block}
-                className="p-1.5 text-neutral-500 hover:text-red-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+                aria-label={t.community.block}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-neutral-400 hover:text-red-400 rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
               >
                 <UserX className="w-3.5 h-3.5" />
               </button>
@@ -507,9 +551,10 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
                               type="button"
                               onClick={() => handleDeleteComment(comment.id)}
                               title={t.community.deletePost}
-                              className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                              aria-label={t.community.deletePost}
+                              className="text-neutral-400 hover:text-red-400 p-1.5 cursor-pointer"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {!isCommentAuthor && user && (
@@ -518,17 +563,19 @@ export const BuddyPostCard: React.FC<BuddyPostCardProps> = ({
                                 type="button"
                                 onClick={() => onReport('comment', `buddyPosts/${post.id}/comments/${comment.id}`)}
                                 title={t.community.report}
-                                className="text-neutral-500 hover:text-amber-400 p-0.5 cursor-pointer"
+                                aria-label={t.community.report}
+                                className="text-neutral-400 hover:text-amber-400 p-1.5 cursor-pointer"
                               >
-                                <Flag className="w-3 h-3" />
+                                <Flag className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 type="button"
-                                onClick={() => onBlockUser(comment.authorUid)}
+                                onClick={() => setInlineConfirm({ type: 'block', targetUid: comment.authorUid })}
                                 title={t.community.block}
-                                className="text-neutral-500 hover:text-red-400 p-0.5 cursor-pointer"
+                                aria-label={t.community.block}
+                                className="text-neutral-400 hover:text-red-400 p-1.5 cursor-pointer"
                               >
-                                <UserX className="w-3 h-3" />
+                                <UserX className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}

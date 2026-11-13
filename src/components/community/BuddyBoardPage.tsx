@@ -46,6 +46,7 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
 
   const [posts, setPosts] = useState<BuddyPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<string>('all');
   const [blockedUids, setBlockedUids] = useState<string[]>([]);
   const [reportTarget, setReportTarget] = useState<{
@@ -55,11 +56,12 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
 
   const loadPosts = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await fetchAllBuddyPosts(kindFilter, 30);
       setPosts(list);
-    } catch (err) {
-      console.error('Failed to load buddy posts:', err);
+    } catch {
+      setLoadError(t.community.buddyLoadError);
     } finally {
       setLoading(false);
     }
@@ -85,12 +87,11 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
 
   const handleBlockUser = async (targetUid: string) => {
     if (!user) return;
-    if (!window.confirm(t.community.blockConfirm)) return;
     try {
       await blockUser(user.uid, targetUid);
-      setBlockedUids([...blockedUids, targetUid]);
-    } catch (err) {
-      console.error('Failed to block user:', err);
+      setBlockedUids((prev) => (prev.includes(targetUid) ? prev : [...prev, targetUid]));
+    } catch {
+      setLoadError(t.states.errorMessage);
     }
   };
 
@@ -100,7 +101,7 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
   // Find event title and date for a post
   const getEventTitle = (eventId: string): string => {
     const e = events.find((item) => item.id === eventId);
-    return e?.title || 'Concert';
+    return e?.title || t.community.concertFallback;
   };
 
   const getEventDate = (eventId: string): string | undefined => {
@@ -112,35 +113,37 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
   return (
     <div className="fixed inset-0 z-1000 bg-neutral-950 text-white flex flex-col overflow-hidden animate-in fade-in">
       {/* Top Header */}
-      <header className="p-4 border-b border-neutral-850 bg-neutral-900/90 backdrop-blur-md flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="p-3 sm:p-4 border-b border-neutral-850 bg-neutral-900/90 backdrop-blur-md flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="p-2 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label={t.community.backToMap}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-base font-bold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-lime-400" />
-              <span>{t.community.findBuddy}</span>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold text-white flex items-center gap-2 truncate">
+              <Users className="w-5 h-5 text-lime-400 shrink-0" />
+              <span className="truncate">{t.community.findBuddy}</span>
             </h1>
-            <p className="text-[11px] font-mono text-neutral-400">
-              Community board (30 newest open posts)
+            <p className="text-[11px] font-mono text-neutral-400 truncate">
+              {t.community.boardSubtitle}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={loadPosts}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-xs font-mono text-neutral-300 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+            aria-label={t.community.refresh}
+            className="flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl bg-neutral-800 hover:bg-neutral-750 text-xs font-mono text-neutral-300 hover:text-white transition-all cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>{t.community.refresh}</span>
+            <span className="hidden sm:inline">{t.community.refresh}</span>
           </button>
         </div>
       </header>
@@ -149,13 +152,13 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
       <div className="bg-amber-950/40 border-b border-amber-500/20 px-4 py-2.5 flex items-start gap-2.5 shrink-0">
         <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
         <p className="text-xs text-amber-200/90 leading-relaxed font-sans">
-          <strong>Safety Note:</strong> {t.community.safetyNotice}
+          <strong>{t.community.safetyNoteLabel}</strong> {t.community.safetyNotice}
         </p>
       </div>
 
       {/* Filter Tabs by Kind */}
-      <div className="px-4 py-2.5 border-b border-neutral-850 flex items-center gap-2 overflow-x-auto shrink-0 bg-neutral-950">
-        <Filter className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+      <div className="px-4 py-2.5 border-b border-neutral-850 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0 bg-neutral-950">
+        <Filter className="w-3.5 h-3.5 text-neutral-500 shrink-0" aria-hidden="true" />
         {(
           [
             { key: 'all', label: t.community.allKinds },
@@ -168,10 +171,11 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
             key={f.key}
             type="button"
             onClick={() => setKindFilter(f.key)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
+            aria-pressed={kindFilter === f.key}
+            className={`px-3 py-2 min-h-[40px] rounded-xl text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer shrink-0 ${
               kindFilter === f.key
                 ? 'bg-lime-400 text-black font-bold'
-                : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
+                : 'bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white'
             }`}
           >
             {f.label}
@@ -182,16 +186,28 @@ export const BuddyBoardPage: React.FC<BuddyBoardPageProps> = ({
       {/* Post List Content */}
       <main className="flex-1 overflow-y-auto p-4 max-w-2xl mx-auto w-full space-y-3">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2 text-neutral-500">
+          <div className="flex flex-col items-center justify-center py-12 gap-2 text-neutral-400">
             <RefreshCw className="w-6 h-6 animate-spin text-lime-400" />
-            <p className="text-xs font-mono">Loading buddy requests...</p>
+            <p className="text-xs font-mono">{t.community.loadingBuddies}</p>
+          </div>
+        ) : loadError ? (
+          <div className="text-center py-12 px-4 space-y-3">
+            <p className="text-sm text-red-300">{loadError}</p>
+            <button
+              type="button"
+              onClick={loadPosts}
+              className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-mono cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{t.states.retry}</span>
+            </button>
           </div>
         ) : visiblePosts.length === 0 ? (
           <div className="text-center py-16 px-4 space-y-3">
             <Users className="w-10 h-10 text-neutral-600 mx-auto" />
-            <p className="text-sm text-neutral-400">{t.community.noPostsOnBoard}</p>
-            <p className="text-xs text-neutral-500">
-              Open any concert details from the map to post a request for that show!
+            <p className="text-sm text-neutral-300">{t.community.noPostsOnBoard}</p>
+            <p className="text-xs text-neutral-400">
+              {t.community.boardEmptyHint}
             </p>
           </div>
         ) : (

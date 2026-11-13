@@ -6,9 +6,10 @@ import { Promoter } from '../types/promoter';
 import { Venue } from '../types/venue';
 import { STATUS_MAP } from '../utils/statusUtils';
 import { computeDisplayedStatus } from '../utils/crowdStatusLogic';
-import { subscribeToEventReports, submitCrowdReport } from '../services/reportService';
-import { formatBangkokDateTime, formatRelativeTime, parseTimestampToDate } from '../utils/dateUtils';
+import { fetchEventReports, submitCrowdReport } from '../services/reportService';
+import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
 import { buildIcs, buildGoogleCalendarUrl, buildIcsFileName, triggerIcsDownload } from '../utils/calendar';
+import { safeExternalUrl } from '../utils/urlUtils';
 import { Language, translations } from '../i18n';
 import { BuddyPost, UserProfile } from '../types/community';
 import { fetchEventBuddyPosts, fetchBlockedUids, blockUser } from '../services/communityService';
@@ -90,6 +91,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   // Buddy Posts states (Going Together section, max 10 open posts)
   const [buddyPosts, setBuddyPosts] = useState<BuddyPost[]>([]);
   const [loadingBuddyPosts, setLoadingBuddyPosts] = useState(false);
+  const [buddyError, setBuddyError] = useState<string | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [isChooseProfileOpen, setIsChooseProfileOpen] = useState(false);
   const [blockedUids, setBlockedUids] = useState<string[]>([]);
@@ -115,17 +117,19 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
       loadEventBuddyPosts();
     } else {
       setBuddyPosts([]);
+      setBuddyError(null);
     }
   }, [event?.id]);
 
   const loadEventBuddyPosts = async () => {
     if (!event?.id) return;
     setLoadingBuddyPosts(true);
+    setBuddyError(null);
     try {
       const list = await fetchEventBuddyPosts(event.id, 10);
       setBuddyPosts(list);
-    } catch (err) {
-      console.error('Failed to load event buddy posts:', err);
+    } catch {
+      setBuddyError(t.community.buddyLoadError);
     } finally {
       setLoadingBuddyPosts(false);
     }
@@ -195,18 +199,32 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Subscribe to crowd reports ONLY for this event (Requirement 5: limit 50, newest first, last 90 min)
+  // Load crowd reports once when event opens (limit 50, newest first, last 90 min)
+  const loadEventReports = async (targetEventId: string) => {
+    try {
+      const data = await fetchEventReports(targetEventId);
+      setReports(data);
+    } catch {
+      // Non-critical: fall back to event.status without breaking detail view
+    }
+  };
+
   useEffect(() => {
-    if (!event) {
+    if (!event?.id) {
       setReports([]);
       return;
     }
-    const unsubscribe = subscribeToEventReports(
-      event.id,
-      (data) => setReports(data),
-      (err) => console.error('Failed to load reports:', err)
-    );
-    return () => unsubscribe();
+    let cancelled = false;
+    fetchEventReports(event.id)
+      .then((data) => {
+        if (!cancelled) setReports(data);
+      })
+      .catch(() => {
+        if (!cancelled) setReports([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [event?.id]);
 
   if (!event) return null;
@@ -214,11 +232,6 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   // Compute displayed status using the pure function (Requirement 4)
   const displayedStatus = computeDisplayedStatus(event, reports);
   const isSample = event.title.toUpperCase().startsWith('SAMPLE');
-
-  // Find user's existing report (doc id = user.uid)
-  const userReport = user ? reports.find((_, idx) => false) : null; // Note: reports lack uid unless attached, but we can check if current user submitted
-  // Wait, since reports array maps docSnap data without uid, let's store reports with uid if needed or check auth
-  // Actually, we can check auth.currentUser?.uid. Let's fetch user's own report or check local state.
 
   const handleSignInForReport = async () => {
     setIsSigningIn(true);
@@ -228,7 +241,6 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
     } catch (err: any) {
-      console.error('Sign-in error:', err);
       setReportError(err?.message || 'Google sign-in failed.');
     } finally {
       setIsSigningIn(false);
@@ -241,15 +253,13 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
     setReportError(null);
     try {
       await submitCrowdReport(event.id, user.uid, status);
+      await loadEventReports(event.id);
     } catch (err: any) {
-      console.error('Submit report error:', err);
-      setReportError(err?.message || 'Failed to submit report.');
+      setReportError(err?.message || (lang === 'th' ? 'ส่งรายงานไม่สำเร็จ กรุณาลองใหม่' : 'Failed to submit report.'));
     } finally {
       setIsSubmittingReport(false);
     }
   };
-
-  const myReport = user ? reports.find((r: any) => r.uid === user.uid) : null;
 
   // Calendar helpers and past event detection
   const eventStartDate = event ? parseTimestampToDate(event.startAt) : new Date();
@@ -326,8 +336,8 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-              aria-label="Close event sheet"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
+              aria-label={t.eventDetail.close}
             >
               <X className="w-5 h-5" />
             </button>
@@ -347,7 +357,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
               <button
                 type="button"
                 onClick={onOpenVenue}
-                className="mt-1.5 flex items-center gap-1.5 text-xs text-neutral-300 hover:text-lime-400 font-medium transition-colors group cursor-pointer"
+                className="mt-1.5 flex items-center gap-1.5 min-h-[36px] text-xs text-neutral-300 hover:text-lime-400 font-medium transition-colors group cursor-pointer"
               >
                 <MapPin className="w-3.5 h-3.5 text-lime-400 shrink-0" />
                 <span className="underline underline-offset-2 decoration-neutral-600 group-hover:decoration-lime-400">
@@ -357,18 +367,18 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             )}
 
             {/* AI Source Attribution (Requirement 8) */}
-            {event.origin === 'ai' && event.sourceUrl && (
+            {event.origin === 'ai' && safeExternalUrl(event.sourceUrl) && (
               <div className="mt-2 text-xs text-neutral-400 font-mono flex items-center gap-1.5">
                 <span>{lang === 'th' ? 'แหล่งที่มา:' : 'Source:'}</span>
                 <a
-                  href={event.sourceUrl}
+                  href={safeExternalUrl(event.sourceUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-lime-400 hover:underline inline-flex items-center gap-1 truncate max-w-[280px]"
+                  className="text-lime-400 hover:underline inline-flex items-center gap-1 truncate max-w-[260px]"
                 >
                   {(() => {
                     try {
-                      return new URL(event.sourceUrl!).hostname;
+                      return new URL(safeExternalUrl(event.sourceUrl)!).hostname;
                     } catch {
                       return event.sourceUrl!;
                     }
@@ -531,7 +541,9 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
               </h3>
               {reports.length > 0 && (
                 <span className="text-[10px] font-mono text-neutral-400">
-                  {reports.length} report{reports.length === 1 ? '' : 's'} (90m)
+                  {lang === 'th'
+                    ? `${reports.length} รายงาน (90 นาที)`
+                    : `${reports.length} report${reports.length === 1 ? '' : 's'} (90m)`}
                 </span>
               )}
             </div>
@@ -543,7 +555,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
             )}
 
             {!user ? (
-              <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <p className="text-xs text-neutral-400">
                   {t.eventDetail.signInToReport}
                 </p>
@@ -551,10 +563,10 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                   type="button"
                   onClick={handleSignInForReport}
                   disabled={isSigningIn}
-                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-all cursor-pointer shadow-md disabled:opacity-50 shrink-0"
+                  className="flex items-center gap-2 px-3.5 py-2 min-h-[44px] rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-all cursor-pointer shadow-md disabled:opacity-50 shrink-0"
                 >
                   {isSigningIn ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
-                  <span>Sign in with Google</span>
+                  <span>{t.community.signInGoogle}</span>
                 </button>
               </div>
             ) : (
@@ -718,12 +730,12 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 </div>
               </div>
 
-              {promoter.igUrl && (
+              {safeExternalUrl(promoter.igUrl) && (
                 <a
-                  href={promoter.igUrl}
+                  href={safeExternalUrl(promoter.igUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-mono transition-colors shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-mono transition-colors shrink-0"
                 >
                   <Instagram className="w-3.5 h-3.5 text-pink-400" />
                   <span>IG</span>
@@ -786,8 +798,9 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                   type="button"
                   onClick={loadEventBuddyPosts}
                   disabled={loadingBuddyPosts}
-                  title="Refresh posts"
-                  className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                  title={t.community.refresh}
+                  aria-label={t.community.refresh}
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingBuddyPosts ? 'animate-spin' : ''}`} />
                 </button>
@@ -795,7 +808,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 {user ? (
                   buddyPosts.some((p) => p.authorUid === user.uid) ? (
                     <span className="text-[11px] font-mono text-lime-400/90 px-2.5 py-1 rounded-xl bg-lime-400/10 border border-lime-400/20">
-                      {lang === 'th' ? 'คุณโพสต์แล้ว' : 'Posted'}
+                      {t.community.postedBadge}
                     </span>
                   ) : (
                     <button
@@ -807,7 +820,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                           setIsCreatePostOpen(true);
                         }
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-sm min-h-[36px]"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs tracking-wider uppercase transition-all active:scale-95 cursor-pointer shadow-sm min-h-[44px]"
                     >
                       <span>+ {t.community.postButton}</span>
                     </button>
@@ -816,7 +829,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                   <button
                     type="button"
                     onClick={handleSignInForReport}
-                    className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-xs transition-all cursor-pointer"
+                    className="px-3 py-1.5 min-h-[44px] rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-mono text-xs transition-all cursor-pointer"
                   >
                     {t.community.signInToPost}
                   </button>
@@ -831,9 +844,21 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
 
             {/* List of 10 newest open posts */}
             {loadingBuddyPosts ? (
-              <p className="text-[11px] font-mono text-neutral-500 text-center py-2">
-                {lang === 'th' ? 'กำลังโหลดโพสต์หาเพื่อน...' : 'Loading buddy requests...'}
+              <p className="text-[11px] font-mono text-neutral-400 text-center py-2">
+                {t.community.loadingBuddies}
               </p>
+            ) : buddyError ? (
+              <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/70 text-center space-y-2">
+                <p className="text-xs text-red-300">{buddyError}</p>
+                <button
+                  type="button"
+                  onClick={loadEventBuddyPosts}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-mono cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{t.states.retry}</span>
+                </button>
+              </div>
             ) : buddyPosts.filter((p) => !blockedUids.includes(p.authorUid)).length === 0 ? (
               <div className="p-4 rounded-xl bg-neutral-950/50 border border-neutral-850 text-center space-y-1">
                 <p className="text-xs text-neutral-400">
@@ -857,9 +882,8 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                       onReport={(targetType, targetPath) => setReportTarget({ targetType, targetPath })}
                       onBlockUser={async (otherUid) => {
                         if (!user) return;
-                        if (!window.confirm(t.community.blockConfirm)) return;
                         await blockUser(user.uid, otherUid);
-                        setBlockedUids([...blockedUids, otherUid]);
+                        setBlockedUids((prev) => (prev.includes(otherUid) ? prev : [...prev, otherUid]));
                       }}
                       onStartChat={onStartChat}
                       lang={lang}
@@ -871,12 +895,12 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
 
           {/* Action Buttons: Buy Tickets + View IG Post */}
           <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {event.ticketUrl ? (
+            {safeExternalUrl(event.ticketUrl) ? (
               <a
-                href={event.ticketUrl}
+                href={safeExternalUrl(event.ticketUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm tracking-wide transition-all shadow-lg shadow-lime-400/20 active:scale-98"
+                className="flex items-center justify-center gap-2 w-full py-3 px-4 min-h-[44px] rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm tracking-wide transition-all shadow-lg shadow-lime-400/20 active:scale-98"
               >
                 <Ticket className="w-4 h-4" />
                 <span>{t.eventDetail.buyTickets}</span>
@@ -886,19 +910,19 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
               <button
                 type="button"
                 disabled
-                className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-neutral-800 text-neutral-500 font-semibold text-sm cursor-not-allowed"
+                className="flex items-center justify-center gap-2 w-full py-3 px-4 min-h-[44px] rounded-xl bg-neutral-800 text-neutral-500 font-semibold text-sm cursor-not-allowed"
               >
                 <Ticket className="w-4 h-4" />
                 <span>{t.eventDetail.buyTickets}</span>
               </button>
             )}
 
-            {event.igPostUrl ? (
+            {safeExternalUrl(event.igPostUrl) ? (
               <a
-                href={event.igPostUrl}
+                href={safeExternalUrl(event.igPostUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-sm border border-neutral-800 transition-all active:scale-98"
+                className="flex items-center justify-center gap-2 w-full py-3 px-4 min-h-[44px] rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-sm border border-neutral-800 transition-all active:scale-98"
               >
                 <Instagram className="w-4 h-4 text-pink-400" />
                 <span>{t.eventDetail.viewIgPost}</span>
@@ -911,7 +935,7 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
           <div className="pt-3 text-center">
             <a
               href={`mailto:wanthawatjx@gmail.com?subject=${encodeURIComponent(`Problem regarding event: ${event.title}`)}`}
-              className="text-xs font-mono text-neutral-500 hover:text-neutral-300 underline underline-offset-2 transition-colors"
+              className="inline-flex items-center justify-center min-h-[44px] px-3 text-xs font-mono text-neutral-400 hover:text-neutral-200 underline underline-offset-2 transition-colors"
             >
               {t.eventDetail.reportAProblem}
             </a>

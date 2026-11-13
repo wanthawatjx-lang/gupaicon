@@ -479,7 +479,9 @@ export async function deleteAllSampleData(): Promise<{
 
   for (const evDoc of sampleEvents) {
     try {
-      const reportsSnap = await getDocs(collection(db, 'events', evDoc.id, 'reports'));
+      const reportsSnap = await getDocs(
+        query(collection(db, 'events', evDoc.id, 'reports'), limit(200))
+      );
       for (const repDoc of reportsSnap.docs) {
         batch.delete(repDoc.ref);
         reportsDeleted++;

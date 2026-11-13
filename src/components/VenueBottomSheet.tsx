@@ -8,6 +8,7 @@ import {
   parseTimestampToDate,
 } from '../utils/dateUtils';
 import { Language, translations } from '../i18n';
+import { safeExternalUrl } from '../utils/urlUtils';
 import {
   MapPin,
   Instagram,
@@ -184,7 +185,7 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
                 <button
                   type="button"
                   onClick={() => onEdit(venue)}
-                  className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
                   aria-label="Edit venue"
                 >
                   <Edit3 className="w-4 h-4" />
@@ -193,8 +194,8 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
-                aria-label="Close sheet"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+                aria-label={t.eventDetail.close}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -207,25 +208,39 @@ export const VenueBottomSheet: React.FC<VenueBottomSheetProps> = ({
           <div className="overflow-y-auto flex-1 px-5 py-3 space-y-4">
             {/* Quick Actions (Maps & IG) */}
             <div className="grid grid-cols-2 gap-2.5">
-              <a
-                href={venue.mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-800 transition-all text-xs font-medium active:scale-98 shadow-sm"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
-                <span>{t.venueSheet.openInMaps}</span>
-              </a>
+              {safeExternalUrl(venue.mapsUrl) ? (
+                <a
+                  href={safeExternalUrl(venue.mapsUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-800 transition-all text-xs font-medium active:scale-98 shadow-sm"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.venueSheet.openInMaps}</span>
+                </a>
+              ) : (
+                <span className="flex items-center justify-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl bg-neutral-900/40 text-neutral-500 border border-neutral-800/60 text-xs font-medium">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>{t.venueSheet.openInMaps}</span>
+                </span>
+              )}
 
-              <a
-                href={venue.igUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-800 transition-all text-xs font-medium active:scale-98 shadow-sm"
-              >
-                <Instagram className="w-3.5 h-3.5 text-pink-400" />
-                <span>{t.venueSheet.instagram}</span>
-              </a>
+              {safeExternalUrl(venue.igUrl) ? (
+                <a
+                  href={safeExternalUrl(venue.igUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-800 transition-all text-xs font-medium active:scale-98 shadow-sm"
+                >
+                  <Instagram className="w-3.5 h-3.5 text-pink-400" />
+                  <span>{t.venueSheet.instagram}</span>
+                </a>
+              ) : (
+                <span className="flex items-center justify-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl bg-neutral-900/40 text-neutral-500 border border-neutral-800/60 text-xs font-medium">
+                  <Instagram className="w-3.5 h-3.5" />
+                  <span>{t.venueSheet.instagram}</span>
+                </span>
+              )}
             </div>
 
             {/* Upcoming Shows Section */}

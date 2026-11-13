@@ -412,13 +412,14 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
   return (
     <div className="fixed inset-0 z-2000 bg-black text-white flex flex-col overflow-hidden">
       {/* Top Header */}
-      <header className="h-14 border-b border-neutral-800 bg-neutral-950 px-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="h-16 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={selectedChat ? () => setSelectedChat(null) : onBackToMap}
-            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-colors cursor-pointer shrink-0"
-            title={selectedChat ? 'Back to chat list' : t.title}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-colors cursor-pointer shrink-0"
+            title={selectedChat ? t.chatsTab : translations[lang].privacy.backToMap}
+            aria-label={selectedChat ? t.chatsTab : translations[lang].privacy.backToMap}
           >
             <ArrowLeft className="w-4 h-4 text-lime-400" />
           </button>
@@ -430,14 +431,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {!selectedChat && (
             <button
               type="button"
               onClick={loadChats}
               disabled={loading || isOffline}
-              className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
               title={commT.refresh}
+              aria-label={commT.refresh}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-lime-400' : ''}`} />
             </button>
@@ -448,8 +450,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               <button
                 type="button"
                 onClick={() => setReportingTarget({ chat: selectedChat, messages })}
-                className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-amber-400 border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-amber-400 border border-neutral-800 transition-colors text-xs flex items-center justify-center gap-1 cursor-pointer"
                 title={commT.report}
+                aria-label={commT.report}
               >
                 <Flag className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline font-mono">{commT.report}</span>
@@ -457,8 +460,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmAction({ type: 'block', chat: selectedChat })}
-                className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-red-400 border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-red-400 border border-neutral-800 transition-colors text-xs flex items-center justify-center gap-1 cursor-pointer"
                 title={commT.block}
+                aria-label={commT.block}
               >
                 <UserX className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline font-mono">{commT.block}</span>
@@ -466,8 +470,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmAction({ type: 'hide', chat: selectedChat })}
-                className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-colors text-xs flex items-center justify-center gap-1 cursor-pointer"
                 title={t.deleteChatForMe}
+                aria-label={t.deleteChatForMe}
               >
                 <EyeOff className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline font-mono">{t.deleteChatForMe}</span>

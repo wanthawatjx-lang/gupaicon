@@ -5,7 +5,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
+  query,
+  limit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -14,40 +15,10 @@ import samplePromoters from '../../data/seed/promoters.json';
 
 const COLLECTION_NAME = 'promoters';
 
-export function subscribeToPromoters(
-  onData: (promoters: Promoter[]) => void,
-  onError?: (error: Error) => void
-): () => void {
-  const promotersRef = collection(db, COLLECTION_NAME);
-
-  return onSnapshot(
-    promotersRef,
-    (snapshot) => {
-      const promoters: Promoter[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          name: data.name ?? '',
-          igUrl: data.igUrl ?? '',
-          verified: Boolean(data.verified),
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        };
-      });
-      onData(promoters);
-    },
-    (error) => {
-      console.error('Error listening to promoters:', error);
-      if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
-    }
-  );
-}
-
 export async function fetchPromoters(): Promise<Promoter[]> {
   try {
-    const promotersRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(promotersRef);
+    const promotersQuery = query(collection(db, COLLECTION_NAME), limit(100));
+    const snapshot = await getDocs(promotersQuery);
     return snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
       return {

@@ -34,6 +34,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [targetProfile, setTargetProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmBlock, setConfirmBlock] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !targetUid) return;
@@ -93,7 +94,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label={t.community.cancel}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -178,18 +180,41 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </p>
               )}
 
-              {viewerUser && onBlockUser && (
+              {viewerUser && onBlockUser && !confirmBlock && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onBlockUser(targetUid);
-                    onClose();
-                  }}
-                  className="w-full py-2 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-red-400 border border-neutral-800 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  onClick={() => setConfirmBlock(true)}
+                  className="w-full min-h-[44px] py-2 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-red-400 border border-neutral-800 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <UserX className="w-3.5 h-3.5" />
                   <span>{t.community.block}</span>
                 </button>
+              )}
+
+              {viewerUser && onBlockUser && confirmBlock && (
+                <div className="p-3 rounded-xl bg-red-950/50 border border-red-800/70 space-y-2 text-xs">
+                  <p className="text-red-200 leading-snug">{t.community.blockConfirm}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmBlock(false)}
+                      className="flex-1 min-h-[36px] py-1.5 px-3 rounded-lg bg-neutral-800 text-neutral-200 font-mono text-xs cursor-pointer"
+                    >
+                      {t.community.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onBlockUser(targetUid);
+                        setConfirmBlock(false);
+                        onClose();
+                      }}
+                      className="flex-1 min-h-[36px] py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs cursor-pointer"
+                    >
+                      {t.community.block}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}

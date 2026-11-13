@@ -5,7 +5,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
+  query,
+  limit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -14,45 +15,10 @@ import sampleVenues from '../../data/seed/venues.json';
 
 const COLLECTION_NAME = 'venues';
 
-export function subscribeToVenues(
-  onData: (venues: Venue[]) => void,
-  onError?: (error: Error) => void
-): () => void {
-  const venuesRef = collection(db, COLLECTION_NAME);
-
-  return onSnapshot(
-    venuesRef,
-    (snapshot) => {
-      const venues: Venue[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          name: data.name ?? '',
-          lat: Number(data.lat),
-          lng: Number(data.lng),
-          address: data.address ?? '',
-          igUrl: data.igUrl ?? '',
-          mapsUrl: data.mapsUrl ?? '',
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        };
-      });
-      onData(venues);
-    },
-    (error) => {
-      console.error('Error listening to venues snapshot:', error);
-      if (onError) {
-        onError(error);
-      }
-      handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
-    }
-  );
-}
-
 export async function fetchVenues(): Promise<Venue[]> {
   try {
-    const venuesRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(venuesRef);
+    const venuesQuery = query(collection(db, COLLECTION_NAME), limit(100));
+    const snapshot = await getDocs(venuesQuery);
     return snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
       return {

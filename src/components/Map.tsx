@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, memo } from 'react';
 import L from 'leaflet';
-import { RotateCcw, Sparkles, Calendar, Ticket, ChevronRight, X, AlertCircle, RefreshCw } from 'lucide-react';
+import { RotateCcw, Sparkles, Calendar, ChevronRight, X, AlertCircle, RefreshCw } from 'lucide-react';
 import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
-import { getVenueUrgentStatus, getStatusLabel, getStatusSymbol } from '../utils/statusUtils';
+import { getVenueUrgentStatus, getStatusConfig, getStatusLabel, getStatusSymbol } from '../utils/statusUtils';
 import { formatBangkokDateTime } from '../utils/dateUtils';
+import { escapeHtml } from '../utils/urlUtils';
 import { MAP_CONFIG } from '../constants/mapConfig';
 import { Language } from '../i18n';
 
@@ -18,7 +19,8 @@ const BANGKOK_PATHUM_BOUNDS = L.latLngBounds(
 
 const DEFAULT_CENTER: [number, number] = [13.80, 100.55];
 const DEFAULT_ZOOM = 11;
-const CLUSTER_ZOOM_THRESHOLD = 11;
+const CLUSTER_ZOOM_THRESHOLD = 12;
+const MAX_MARKERS = 80;
 
 interface AiEventPreview {
   vibeSummary: string;
@@ -38,7 +40,7 @@ interface MapProps {
   user?: User | null;
 }
 
-export const Map: React.FC<MapProps> = ({
+export const Map: React.FC<MapProps> = memo(({
   venues,
   events = [],
   selectedVenue,
@@ -58,10 +60,38 @@ export const Map: React.FC<MapProps> = ({
   const [isLoadingAi, setIsLoadingAi] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Pre-group events by venueId to avoid O(V*E) filtering per marker update
+  const venueEventsMap = useMemo(() => {
+    const mapByVenue: Record<string, ConcertEvent[]> = {};
+    for (const evt of events) {
+      if (!evt.venueId) continue;
+      if (!mapByVenue[evt.venueId]) {
+        mapByVenue[evt.venueId] = [];
+      }
+      mapByVenue[evt.venueId].push(evt);
+    }
+    return mapByVenue;
+  }, [events]);
+
+  // Valid, bounded venues (capped at MAX_MARKERS to preserve smooth mobile performance)
+  const validVenues = useMemo(
+    () =>
+      venues
+        .filter(
+          (v) =>
+            typeof v.lat === 'number' &&
+            typeof v.lng === 'number' &&
+            !isNaN(v.lat) &&
+            !isNaN(v.lng)
+        )
+        .slice(0, MAX_MARKERS),
+    [venues]
+  );
+
   // Automatically select the first upcoming event for preview when selectedVenue changes
   useEffect(() => {
     if (selectedVenue) {
-      const venueEvents = events.filter((e) => e.venueId === selectedVenue.id);
+      const venueEvents = venueEventsMap[selectedVenue.id] || [];
       if (venueEvents.length > 0) {
         setPreviewEvent(venueEvents[0]);
       } else {
@@ -74,7 +104,7 @@ export const Map: React.FC<MapProps> = ({
       setAiPreview(null);
       setAiError(null);
     }
-  }, [selectedVenue, events]);
+  }, [selectedVenue, venueEventsMap]);
 
   // Fetch AI Event Vibe preview using the server-side geminiClient route
   const handleFetchAiPreview = async (event: ConcertEvent) => {
@@ -161,17 +191,62 @@ export const Map: React.FC<MapProps> = ({
     const markersLayer = markersLayerRef.current;
     if (!map || !markersLayer) return;
 
+    const renderSingleVenueMarker = (venue: Venue) => {
+      const isSelected = selectedVenue?.id === venue.id;
+      const venueEvents = venueEventsMap[venue.id] || [];
+      const { status, color, upcomingCount, symbol } = getVenueUrgentStatus(venueEvents);
+      const statusLabel = status === 'none' ? (lang === 'th' ? 'ไม่มีงาน' : 'No shows') : getStatusLabel(status, lang);
+      const safeName = escapeHtml(venue.name);
+      const safeStatusLabel = escapeHtml(statusLabel);
+      const safeSymbol = escapeHtml(symbol || '•');
+
+      const iconHtml = `
+        <div class="relative group cursor-pointer flex items-center justify-center -translate-x-1/2 -translate-y-1/2" style="width: 48px; height: 48px;" role="button" aria-label="${safeName}: ${safeStatusLabel} (${upcomingCount})">
+          ${
+            isSelected
+              ? `<span class="absolute inline-flex h-12 w-12 rounded-full opacity-60 animate-ping" style="background-color: ${color}"></span>`
+              : ''
+          }
+          <div class="relative flex items-center justify-center w-10 h-10 rounded-full transition-transform duration-150 ${
+            isSelected
+              ? 'scale-115 shadow-2xl ring-2 ring-white'
+              : 'hover:scale-105 shadow-lg'
+          }" style="background-color: #0d0d0f; border: 2.5px solid ${color}; box-shadow: 0 0 14px ${color}66;">
+            <span class="text-xs font-bold leading-none select-none" style="color: ${color}">${safeSymbol}</span>
+            ${
+              upcomingCount > 0
+                ? `<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-mono font-bold text-black border border-black" style="background-color: ${color};">${upcomingCount}</span>`
+                : ''
+            }
+          </div>
+          <div class="absolute -bottom-1 w-2.5 h-2.5 rotate-45" style="background-color: #0d0d0f; border-right: 2px solid ${color}; border-bottom: 2px solid ${color};"></div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        className: 'custom-venue-pin',
+        html: iconHtml,
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+      });
+
+      const marker = L.marker([venue.lat, venue.lng], {
+        icon: customIcon,
+        title: `${venue.name} • ${symbol || '•'} ${statusLabel} (${upcomingCount})`,
+      });
+
+      marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        onSelectVenue(venue);
+        map.panTo([venue.lat, venue.lng], { animate: true, duration: 0.5 });
+      });
+
+      marker.addTo(markersLayer);
+    };
+
     const updateMarkers = () => {
       markersLayer.clearLayers();
-
       const currentZoom = map.getZoom();
-      const validVenues = venues.filter(
-        (v) =>
-          typeof v.lat === 'number' &&
-          typeof v.lng === 'number' &&
-          !isNaN(v.lat) &&
-          !isNaN(v.lng)
-      );
 
       // Distance-based clustering when zoomed out
       if (currentZoom <= CLUSTER_ZOOM_THRESHOLD && validVenues.length > 2) {
@@ -211,9 +286,7 @@ export const Map: React.FC<MapProps> = ({
 
         clusters.forEach((cluster) => {
           if (cluster.venues.length > 1) {
-            const clusterEvents = events.filter((e) =>
-              cluster.venues.some((v) => v.id === e.venueId)
-            );
+            const clusterEvents = cluster.venues.flatMap((v) => venueEventsMap[v.id] || []);
             const { color, upcomingCount } = getVenueUrgentStatus(clusterEvents);
 
             const clusterHtml = `
@@ -264,63 +337,13 @@ export const Map: React.FC<MapProps> = ({
       });
     };
 
-    const renderSingleVenueMarker = (venue: Venue) => {
-      const isSelected = selectedVenue?.id === venue.id;
-      const venueEvents = events.filter((e) => e.venueId === venue.id);
-      const { status, color, upcomingCount, symbol } = getVenueUrgentStatus(venueEvents);
-      const statusLabel = getStatusLabel(status, lang);
-
-      const iconHtml = `
-        <div class="relative group cursor-pointer flex items-center justify-center -translate-x-1/2 -translate-y-1/2" style="width: 48px; height: 48px;" role="button" aria-label="${venue.name}: ${statusLabel} (${upcomingCount} shows)" tabindex="0">
-          ${
-            isSelected
-              ? `<span class="absolute inline-flex h-12 w-12 rounded-full opacity-60 animate-ping" style="background-color: ${color}"></span>`
-              : ''
-          }
-          <div class="relative flex items-center justify-center w-10 h-10 rounded-full transition-transform duration-150 ${
-            isSelected
-              ? 'scale-115 shadow-2xl ring-2 ring-white'
-              : 'hover:scale-105 shadow-lg'
-          }" style="background-color: #0d0d0f; border: 2.5px solid ${color}; box-shadow: 0 0 14px ${color}66;">
-            <span class="text-xs font-bold leading-none select-none" style="color: ${color}">${symbol || '•'}</span>
-            ${
-              upcomingCount > 0
-                ? `<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-mono font-bold text-black border border-black" style="background-color: ${color};">${upcomingCount}</span>`
-                : ''
-            }
-          </div>
-          <div class="absolute -bottom-1 w-2.5 h-2.5 rotate-45" style="background-color: #0d0d0f; border-right: 2px solid ${color}; border-bottom: 2px solid ${color};"></div>
-        </div>
-      `;
-
-      const customIcon = L.divIcon({
-        className: 'custom-venue-pin',
-        html: iconHtml,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24],
-      });
-
-      const marker = L.marker([venue.lat, venue.lng], {
-        icon: customIcon,
-        title: `${venue.name} • ${symbol} ${statusLabel} (${upcomingCount} shows)`,
-      });
-
-      marker.on('click', (e) => {
-        L.DomEvent.stopPropagation(e);
-        onSelectVenue(venue);
-        map.panTo([venue.lat, venue.lng], { animate: true, duration: 0.5 });
-      });
-
-      marker.addTo(markersLayer);
-    };
-
     updateMarkers();
 
     map.on('zoomend', updateMarkers);
     return () => {
       map.off('zoomend', updateMarkers);
     };
-  }, [venues, events, selectedVenue, onSelectVenue, lang]);
+  }, [validVenues, venueEventsMap, selectedVenue, onSelectVenue, lang]);
 
   // Center on selected venue
   useEffect(() => {
@@ -339,17 +362,13 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
-  const selectedVenueEvents = selectedVenue
-    ? events.filter((e) => e.venueId === selectedVenue.id)
-    : [];
-
   return (
     <div className="relative w-full h-full">
       {/* Full-screen Leaflet container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Recenter button floating on map */}
-      <div className="absolute top-16 right-3 z-500">
+      <div className="absolute top-32 sm:top-24 right-3 z-500">
         <button
           type="button"
           onClick={handleResetView}
@@ -378,7 +397,7 @@ export const Map: React.FC<MapProps> = ({
               <button
                 type="button"
                 onClick={onClearFilters}
-                className="px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs cursor-pointer shadow-md active:scale-95 transition-all"
+                className="px-4 py-2 min-h-[44px] rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs cursor-pointer shadow-md active:scale-95 transition-all"
               >
                 {lang === 'th' ? 'ล้างตัวกรองทั้งหมด' : 'Clear All Filters'}
               </button>
@@ -393,20 +412,20 @@ export const Map: React.FC<MapProps> = ({
           <div className="p-3.5 rounded-2xl bg-neutral-950/95 border border-neutral-800/90 shadow-2xl backdrop-blur-md flex flex-col gap-2.5">
             {/* Header: Venue Name & Close */}
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <span className="text-[10px] font-mono uppercase text-lime-400 tracking-wider">
                   {lang === 'th' ? 'สถานที่ที่เลือก' : 'Selected Venue'}
                 </span>
-                <h3 className="text-sm font-bold text-white leading-tight">{selectedVenue.name}</h3>
-                <p className="text-[11px] text-neutral-400 truncate max-w-[280px]">
+                <h3 className="text-sm font-bold text-white leading-tight truncate">{selectedVenue.name}</h3>
+                <p className="text-[11px] text-neutral-400 truncate max-w-[260px]">
                   {selectedVenue.address || (lang === 'th' ? 'กรุงเทพฯ / ปทุมธานี' : 'Bangkok / Pathum Thani')}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onSelectVenue(null)}
-                className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-                aria-label="Close preview"
+                className="text-neutral-400 hover:text-white min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
+                aria-label={lang === 'th' ? 'ปิดตัวอย่างสถานที่' : 'Close preview'}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -417,8 +436,11 @@ export const Map: React.FC<MapProps> = ({
               <div className="p-2.5 rounded-xl bg-neutral-900/90 border border-neutral-800/80 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <h4 className="text-xs font-bold text-neutral-100 line-clamp-1">{previewEvent.title}</h4>
-                  <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-lime-400/10 text-lime-400 border border-lime-400/30">
-                    {previewEvent.status === 'sold_out' ? 'SOLD OUT' : 'UPCOMING'}
+                  <span
+                    className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${getStatusConfig(previewEvent.status).badgeClass}`}
+                  >
+                    <span>{getStatusSymbol(previewEvent.status)}</span>
+                    <span>{getStatusLabel(previewEvent.status, lang)}</span>
                   </span>
                 </div>
 
@@ -451,11 +473,11 @@ export const Map: React.FC<MapProps> = ({
                       try {
                         const provider = new GoogleAuthProvider();
                         await signInWithPopup(auth, provider);
-                      } catch (err) {
-                        console.error('Sign in failed:', err);
+                      } catch {
+                        // Sign-in cancelled or blocked
                       }
                     }}
-                    className="mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium border border-neutral-700/80 transition-all cursor-pointer"
+                    className="mt-1 flex items-center justify-center gap-1.5 py-2 px-3 min-h-[44px] rounded-lg bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium border border-neutral-700/80 transition-all cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-lime-400" />
                     <span className="text-[11px]">
@@ -477,12 +499,12 @@ export const Map: React.FC<MapProps> = ({
                     </div>
                   </div>
                 ) : aiError ? (
-                  <div className="mt-1 p-2 rounded-lg bg-red-950/50 border border-red-800/60 text-[11px] text-red-300 flex items-center justify-between">
+                  <div className="mt-1 p-2 rounded-lg bg-red-950/50 border border-red-800/60 text-[11px] text-red-300 flex items-center justify-between gap-2">
                     <span>{aiError}</span>
                     <button
                       type="button"
                       onClick={() => handleFetchAiPreview(previewEvent)}
-                      className="flex items-center gap-1 text-[10px] font-bold text-white hover:underline cursor-pointer"
+                      className="flex items-center gap-1 px-2 py-1 min-h-[36px] text-[10px] font-bold text-white hover:underline cursor-pointer shrink-0"
                     >
                       <RefreshCw className="w-3 h-3" />
                       {lang === 'th' ? 'ลองใหม่' : 'Retry'}
@@ -493,7 +515,7 @@ export const Map: React.FC<MapProps> = ({
                     type="button"
                     onClick={() => handleFetchAiPreview(previewEvent)}
                     disabled={isLoadingAi}
-                    className="mt-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium border border-neutral-700/80 transition-all cursor-pointer disabled:opacity-50"
+                    className="mt-1 flex items-center justify-center gap-1.5 py-2 px-3 min-h-[44px] rounded-lg bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium border border-neutral-700/80 transition-all cursor-pointer disabled:opacity-50"
                   >
                     {isLoadingAi ? (
                       <>
@@ -518,7 +540,7 @@ export const Map: React.FC<MapProps> = ({
                   <button
                     type="button"
                     onClick={() => onSelectEvent(previewEvent)}
-                    className="mt-1 flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg bg-neutral-800/80 hover:bg-neutral-750 text-xs font-semibold text-lime-400 hover:text-lime-300 transition-colors cursor-pointer"
+                    className="mt-1 flex items-center justify-between w-full px-3 py-2 min-h-[44px] rounded-lg bg-neutral-800/80 hover:bg-neutral-750 text-xs font-semibold text-lime-400 hover:text-lime-300 transition-colors cursor-pointer"
                   >
                     <span>{lang === 'th' ? 'ดูรายละเอียดงานเต็ม' : 'View Full Event Details'}</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -537,4 +559,4 @@ export const Map: React.FC<MapProps> = ({
       )}
     </div>
   );
-};
+});

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Venue } from '../types/venue';
 import { ConcertEvent } from '../types/event';
-import { getVenueUrgentStatus } from '../utils/statusUtils';
+import { getVenueUrgentStatus, getStatusLabel } from '../utils/statusUtils';
 import { Language, translations } from '../i18n/translations';
 import { MapPin, X, Search, ChevronRight, Music2 } from 'lucide-react';
 
@@ -23,12 +23,18 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
   lang,
 }) => {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const t = translations[lang];
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 200);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const filtered = venues.filter(
     (v) =>
-      v.name.toLowerCase().includes(query.toLowerCase()) ||
-      v.address.toLowerCase().includes(query.toLowerCase())
+      v.name.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
+      v.address.toLowerCase().includes(debouncedQuery.toLowerCase())
   );
 
   return (
@@ -55,8 +61,8 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-            aria-label="Close drawer"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label={t.eventDetail.close}
           >
             <X className="w-5 h-5" />
           </button>
@@ -71,7 +77,8 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.app.searchPlaceholder}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
+              aria-label={t.app.searchPlaceholder}
+              className="w-full min-h-[44px] bg-neutral-900 border border-neutral-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-lime-400"
             />
           </div>
         </div>
@@ -97,7 +104,8 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
           ) : (
             filtered.map((venue) => {
               const venueEvents = events.filter((e) => e.venueId === venue.id);
-              const { color, upcomingCount } = getVenueUrgentStatus(venueEvents);
+              const { status, color, upcomingCount, symbol } = getVenueUrgentStatus(venueEvents);
+              const statusLabel = status === 'none' ? '' : getStatusLabel(status, lang);
               const isSample = venue.name.toUpperCase().startsWith('SAMPLE');
 
               return (
@@ -108,14 +116,22 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
                     onSelectVenue(venue);
                     onClose();
                   }}
-                  className="w-full text-left p-3 rounded-xl bg-neutral-900/50 hover:bg-neutral-900 border border-neutral-800/60 hover:border-lime-400/50 transition-all flex items-center justify-between gap-3 group cursor-pointer"
+                  className="w-full min-h-[44px] text-left p-3 rounded-xl bg-neutral-900/50 hover:bg-neutral-900 border border-neutral-800/60 hover:border-lime-400/50 transition-all flex items-center justify-between gap-3 group cursor-pointer"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
+                        className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 border"
+                        style={{
+                          color,
+                          borderColor: color,
+                          backgroundColor: '#0d0d0f',
+                        }}
+                        title={statusLabel || undefined}
+                        aria-label={statusLabel || undefined}
+                      >
+                        {symbol || '•'}
+                      </span>
                       <span className="text-sm font-bold text-white group-hover:text-lime-300 transition-colors truncate">
                         {venue.name}
                       </span>
@@ -125,7 +141,7 @@ export const VenueListDrawer: React.FC<VenueListDrawerProps> = ({
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-neutral-400 truncate pl-4.5">
+                    <div className="flex items-center gap-1 text-xs text-neutral-400 truncate pl-7">
                       <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
                       <span className="truncate">{venue.address}</span>
                     </div>

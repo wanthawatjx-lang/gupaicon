@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Source, SourceFormData, SourceType } from '../../types/source';
 import { Venue } from '../../types/venue';
-import { subscribeToSources, createSource, updateSource, deleteSource, seedSampleSources } from '../../services/sourceService';
-import { Language, translations } from '../../i18n';
-import { Plus, Trash2, Edit, Check, X, Database, Globe, Search, Tag, MapPin } from 'lucide-react';
+import { fetchSources, createSource, updateSource, deleteSource, seedSampleSources } from '../../services/sourceService';
+import { Language } from '../../i18n';
+import { Plus, Trash2, Edit, Database, MapPin, RefreshCw, X } from 'lucide-react';
 
 interface SourcesAdminProps {
   venues: Venue[];
@@ -25,17 +25,22 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const loadSources = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchSources();
+      setSources(data);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load sources.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setLoading(true);
-    const unsubscribe = subscribeToSources(
-      (data) => {
-        setSources(data);
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-    return () => unsubscribe();
+    loadSources();
   }, []);
 
   const handleOpenAdd = () => {
@@ -80,16 +85,18 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
         setSuccess('Source created successfully.');
       }
       setIsFormOpen(false);
+      await loadSources();
     } catch (err: any) {
       setError(err?.message || 'Failed to save source.');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this source?')) return;
     try {
       await deleteSource(id);
+      setConfirmDeleteId(null);
       setSuccess('Source deleted.');
+      await loadSources();
     } catch (err: any) {
       setError(err?.message || 'Failed to delete source.');
     }
@@ -98,6 +105,7 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
   const handleToggleActive = async (src: Source) => {
     try {
       await updateSource(src.id, { active: !src.active });
+      await loadSources();
     } catch (err: any) {
       setError(err?.message || 'Failed to update active status.');
     }
@@ -109,6 +117,7 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
     try {
       const count = await seedSampleSources();
       setSuccess(`Seeded ${count} sample sources successfully!`);
+      await loadSources();
     } catch (err: any) {
       setError(err?.message || 'Failed to seed sample sources.');
     } finally {
@@ -123,7 +132,17 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
           <h2 className="text-xl font-bold text-white">AI Discovery Sources</h2>
           <p className="text-sm text-neutral-400">Manage search queries and target URLs used for automated event discovery.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={loadSources}
+            disabled={loading}
+            className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium rounded-xl border border-neutral-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            aria-label="Refresh sources"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
           <button
             type="button"
             onClick={handleSeed}
@@ -198,14 +217,34 @@ export const SourcesAdmin: React.FC<SourcesAdminProps> = ({ venues, lang }) => {
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(src.id)}
-                      className="p-2 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-lg transition-colors cursor-pointer"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {confirmDeleteId === src.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(src.id)}
+                          className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+                        >
+                          Confirm Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2.5 py-1.5 bg-neutral-800 text-neutral-300 rounded-lg text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(src.id)}
+                        className="p-2 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-lg transition-colors cursor-pointer"
+                        title="Delete"
+                        aria-label={`Delete source ${src.name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

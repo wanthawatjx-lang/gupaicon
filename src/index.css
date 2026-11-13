@@ -12,6 +12,19 @@
   code, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  :focus-visible {
+    outline: 2px solid #a3e635;
+    outline-offset: 2px;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Accessibility: Support prefers-reduced-motion */

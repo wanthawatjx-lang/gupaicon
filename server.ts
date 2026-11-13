@@ -137,16 +137,53 @@ async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
 
+  const distPath = path.join(__dirname, 'dist');
+  const isProduction =
+    process.env.NODE_ENV === 'production' || fs.existsSync(path.join(distPath, 'index.html'));
+
   // Security Headers Middleware
   app.use((req, res, next) => {
+    const scriptSrc = isProduction
+      ? "script-src 'self' https://apis.google.com"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com";
+    const connectSrc = isProduction
+      ? "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com wss://*.firebaseio.com"
+      : "connect-src 'self' ws: wss: https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com wss://*.firebaseio.com";
+
+    const csp = [
+      "default-src 'self'",
+      scriptSrc,
+      "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
+      connectSrc,
+      "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; ');
+
+    res.setHeader('Content-Security-Policy', csp);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     next();
   });
 
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({ limit: '20kb' }));
+
+  // Handle malformed or oversized JSON payloads cleanly without stack traces
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err?.type === 'entity.too.large' || err?.status === 413) {
+      return res.status(413).json({ error: 'Request payload too large.' });
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      return res.status(400).json({ error: 'Invalid JSON payload.' });
+    }
+    next(err);
+  });
 
   // GET /healthz - Public health check route
   app.get('/healthz', (req, res) => {
@@ -218,15 +255,15 @@ async function startServer() {
       return res.status(500).json({ error: 'Discovery service temporarily unavailable (no Gemini API keys configured).' });
     }
 
-    // Validate body (must be empty or an object)
-    if (req.body && typeof req.body !== 'object') {
+    // Validate body (must be empty or a plain object)
+    if (req.body && (typeof req.body !== 'object' || Array.isArray(req.body))) {
       return res.status(400).json({ error: 'Invalid request payload.' });
     }
 
     isDiscovering = true;
     try {
-      // 1. Fetch active sources
-      const sourcesSnapshot = await db.collection('sources').where('active', '==', true).get();
+      // 1. Fetch active sources (bounded)
+      const sourcesSnapshot = await db.collection('sources').where('active', '==', true).limit(50).get();
       const sources = sourcesSnapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
 
       if (sources.length === 0) {
@@ -237,15 +274,14 @@ async function startServer() {
       // Limit at most 15 Gemini calls per run
       const sourcesToRun = sources.slice(0, 15);
 
-      // Fetch existing venues for matching
-      const venuesSnapshot = await db.collection('venues').get();
+      // Fetch existing venues, events, and drafts (bounded)
+      const venuesSnapshot = await db.collection('venues').limit(200).get();
       const venues = venuesSnapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
 
-      // Fetch existing events and drafts for duplicates & fingerprints
-      const eventsSnapshot = await db.collection('events').get();
+      const eventsSnapshot = await db.collection('events').limit(300).get();
       const existingEvents = eventsSnapshot.docs.map((d: any) => d.data());
 
-      const draftsSnapshot = await db.collection('eventDrafts').get();
+      const draftsSnapshot = await db.collection('eventDrafts').limit(300).get();
       const existingDrafts = draftsSnapshot.docs.map((d: any) => d.data());
 
       let totalDiscovered = 0;
@@ -462,6 +498,9 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
     }
     const cleanLang: 'th' | 'en' = lang;
     const cleanEventId = eventId.trim();
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(cleanEventId)) {
+      return res.status(400).json({ error: 'Invalid eventId format' });
+    }
 
     // 3. User limit: 10 previews per hour
     const userId = decodedUser.uid;
@@ -636,9 +675,6 @@ Provide:
   });
 
   // Client Serving: Production static files or Vite dev middleware
-  const distPath = path.join(__dirname, 'dist');
-  const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync(path.join(distPath, 'index.html'));
-
   if (isProduction) {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {

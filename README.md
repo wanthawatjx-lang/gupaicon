@@ -130,11 +130,69 @@
    - ตรวจสอบว่า `email_verified === true` และ `email === 'wanthawatjx@gmail.com'`
    - คำขอที่ไม่ผ่านการตรวจสอบจะถูกปฏิเสธด้วย HTTP 401 หรือ 403 ทันที
 2. **การป้องกันและจำกัดการใช้งาน (Rate Limiting & Security Headers)**:
-   - จำกัด 30 คำขอต่อนาทีต่อ IP สำหรับ `/api/*` ทั่วไป และ 5 คำขอต่อนาทีสำหรับ `/api/discover`
-   - บังคับใช้ Same-Origin CORS ป้องกันการเรียกใช้ข้ามโดเมน
-   - ตั้งค่า Security Headers มาตรฐาน (`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`)
+   - จำกัด 30 คำขอต่อนาทีต่อ IP สำหรับ `/api/*` ทั่วไป, 5 คำขอต่อนาทีสำหรับ `/api/discover` และจำกัดอัตราต่อ User สำหรับ `/api/event-preview` พร้อมจำกัดขนาด JSON Request Body ไว้ที่ `20kb`
+   - บังคับใช้ Same-Origin CORS ป้องกันการเรียกใช้ข้ามโดเมน และส่งข้อความ Error แบบทั่วไปโดยไม่เปิดเผย Stack Trace หรือข้อมูลลับ
+   - ตั้งค่า Security Headers เข้มงวด: `Content-Security-Policy` (อนุญาตเฉพาะ `self`, Firebase/Google Auth + Firestore, OpenStreetMap tiles, Google Fonts และ Leaflet CSS; `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, และ `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+   - ลิงก์ภายนอกทั้งหมดใช้ `target="_blank" rel="noopener noreferrer"` และผ่านการตรวจสอบ URL (`http://` / `https://` เท่านั้น) ส่วนข้อความจากผู้ใช้และป้ายหมุดแผนที่แสดงผลเป็นข้อความล้วน/Escape HTML ทั้งหมด
 3. **Healthcheck Endpoint**:
    - `GET /healthz` ให้บริการสำหรับระบบตรวจสอบสถานะตู้คอนเทนเนอร์ (Cloud Run) คืนค่า HTTP 200
+
+---
+
+## Firestore Listeners, Queries & Estimated Reads
+
+### 1. Realtime Listeners (`onSnapshot`)
+- **มีเพียง 1 Listener ในทั้งแอป** และเปิดใช้งานเฉพาะเมื่อผู้ใช้เปิดหน้าห้องแชทส่วนตัวค้างไว้เท่านั้น:
+  - `subscribeToChatMessages` (`chats/{chatId}/messages`, `orderBy('createdAt', 'desc')`, `limit(50)`) — ยกเลิก Subscription ทันทีเมื่อปิดห้องสนทนา
+
+### 2. Bounded One-Time Queries (`getDocs` / `getDoc`)
+ทุกการดึงข้อมูลอื่นๆ ใช้ One-time query พร้อม `limit()` ชัดเจน:
+- **แผนที่และหน้าหลัก (Initial Load)**:
+  - `venues`: `limit(100)`
+  - `promoters`: `limit(100)`
+  - `events`: `where('startAt', '>=', now - 4h)`, `orderBy('startAt', 'asc')`, `limit(60)` (กรองเฉพาะงานที่ยังไม่จบฝั่ง Firestore)
+- **หน้ารายละเอียดงาน (Event Detail Sheet)**:
+  - `events/{eventId}/reports`: `orderBy('createdAt', 'desc')`, `limit(50)` (โหลดเมื่อเปิดดู และโหลดซ้ำหลังส่งรายงาน)
+  - `buddyPosts` (เฉพาะงานนั้น): `where('eventId', '==', eventId)`, `where('status', '==', 'open')`, `orderBy('createdAt', 'desc')`, `limit(10)`
+- **คอมมูนิตี้และแชทส่วนตัว**:
+  - `profiles/{uid}` (`getDoc`) & `profiles/{uid}/blocks`: `limit(100)`
+  - `buddyPosts` (บอร์ดรวม `#/buddies`): `limit(30)` (หรือ `25` เมื่อกรองตามประเภท)
+  - `buddyPosts/{postId}/comments`: `orderBy('createdAt', 'asc')`, `limit(30)` (โหลดเฉพาะเมื่อกดขยายคอมเมนต์)
+  - `chats` (`#/messages`): `where('members', 'array-contains', uid)`, `orderBy('lastMessageAt', 'desc')`, `limit(25)` + `chats/{id}/reads/{uid}` (`getDoc` ต่อห้อง)
+- **แอดมิน & AI Discovery (`AdminPanel` / `/api/discover`)**:
+  - Client: `sources` (`limit(100)`), `eventDrafts` (`limit(100)`), `contentReports` (`limit(50)`), `bans/{uid}` (`getDoc`)
+  - Server (`/api/discover`): `sources` (`active == true`, `limit(50)`), `venues` (`limit(200)`), `events` (`limit(300)`), `eventDrafts` (`limit(300)`)
+
+### 3. Estimated Reads Per Typical Visit
+ตัวอย่างฐานข้อมูลจริง (~25 ร้าน, ~15 ผู้จัด, ~30 งานที่กำลังจะมาถึง, ~3–5 โพสต์หาเพื่อนต่องาน):
+- **ผู้เยี่ยมชมทั่วไป (Signed out: เปิดแผนที่ + กดดู 1 งาน + ดูโพสต์หาเพื่อนในงานนั้น)**:
+  - โหลดหน้าแรก: `venues` (~25) + `promoters` (~15) + `events` (~30) = **~70 reads**
+  - เปิด 1 Event Detail Sheet: `reports` (~3) + `buddyPosts` (~5) = **~8 reads**
+  - **รวมโดยประมาณ: ~78 reads / visit** (สูงสุดตามเพดาน limit ไม่เกิน `100 + 100 + 60 + 50 + 10 = 320 reads`)
+- **ผู้ใช้ที่เข้าสู่ระบบ (Signed in)**:
+  - เพิ่ม `profiles/{uid}` (1 read) + `profiles/{uid}/blocks` (0–5 reads) = **~80–85 reads / visit** (หากไม่เปิดหน้า `#/messages` จะมี `0` realtime listeners)
+
+---
+
+## ก่อนเผยแพร่จริง (Before you publish)
+
+ตรวจสอบรายการต่อไปนี้ก่อนเปิดใช้งานสาธารณะ (Production Checklist):
+1. **จำกัดสิทธิ์ Firebase Web API Key (HTTP Referrer Restriction)**: ไปที่ Google Cloud Console > APIs & Services > Credentials แล้วตั้งค่า **Application restrictions > Websites** บนคีย์ Web API ให้รับเฉพาะโดเมนของแอป (เช่น `https://your-app-domain.run.app/*` และ `http://localhost:3000/*`)
+2. **เพิ่ม Authorized Domains ใน Firebase Authentication**: เปิด Firebase Console > Authentication > Settings > Authorized domains แล้วเพิ่มโดเมน Cloud Run / Custom Domain ของคุณ เพื่อให้ Google Sign-In ทำงานได้
+3. **รักษาความลับของ `GEMINI_API_KEY`**: ตั้งค่า `GEMINI_API_KEY` เป็น Secret/Environment variable บนเซิร์ฟเวอร์เท่านั้น (Cloud Run / AI Studio Secrets) ห้ามนำใส่ไฟล์ฝั่ง client หรือตัวแปร `VITE_*`
+4. **ล้างข้อมูลตัวอย่าง (Delete SAMPLE Data)**: เข้าสู่ Admin Console (`#/admin` ด้วย `wanthawatjx@gmail.com`) > แท็บ **Import** แล้วกด **"Delete all SAMPLE data"** เพื่อลบข้อมูลทดลองออกจาก Firestore
+5. **ตรวจสอบการจัดการคีย์และประวัติ Git**: ยืนยันว่าไฟล์ `.env` ไม่ได้ถูก commit และไม่เคยพิมพ์ token, email หรือข้อความส่วนตัวลงใน log หากเคยเผลอ commit คีย์ ให้ Rotate คีย์ใหม่ทันที
+6. **อัปเดต Firebase Security Rules**: ยืนยันว่า `firestore.rules` ถูก deploy ล่าสุดแล้ว และไม่เคยผ่อนปรนกฎการเขียน/อ่าน
+
+---
+
+## ข้อจำกัดที่ทราบ (Known limitations)
+
+1. **การฝังใน Iframe ภายนอก (`frame-ancestors 'none'`)**: เซิร์ฟเวอร์ส่งค่า `Content-Security-Policy: frame-ancestors 'none'` และ `X-Frame-Options: DENY` ใน production เพื่อป้องกัน Clickjacking ดังนั้นจึงไม่สามารถฝังเว็บนี้ใน `<iframe>` บนเว็บไซต์อื่นได้
+2. **Rate Limiter และ Cache ในหน่วยความจำ (In-Memory State)**: ตัวจำกัดอัตราคำขอ API (`/api/*`, `/api/discover`, `/api/event-preview`) และ cache AI preview อยู่ในหน่วยความจำของ Process Express จึงรีเซ็ตเมื่อเซิร์ฟเวอร์รีสตาร์ท และไม่แชร์ข้ามหลาย Cloud Run instances
+3. **การเข้ารหัสข้อความส่วนตัว (DMs)**: ข้อความส่วนตัวจัดเก็บใน Firestore โดยไม่ได้เข้ารหัสแบบ End-to-End (ระบุไว้ในหน้า Privacy Policy และนโยบายการใช้งานอย่างชัดเจน)
+4. **ความสดของเวลาฝั่ง Client**: การกรองงานที่กำลังจะมาถึง (`now - 4 hours`) และความสดของ crowd report (90 นาที) อาศัยนาฬิกาในเบราว์เซอร์ของผู้ใช้เป็นหลัก
+5. **โมดูล Organizer ที่ไม่ได้ใช้งาน**: ไฟล์ legacy (`OrganizerDashboard.tsx`, `OrganizerRequestModal.tsx`, `organizerService.ts`) ไม่ได้ถูก import ในแอปหลักและไม่มีคอลเลกชันรองรับใน `firestore.rules`
 
 ---
 

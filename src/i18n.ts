@@ -22,6 +22,10 @@ export interface TranslationDictionary {
       soldOut: string;
       noEvents: string;
     };
+    buddiesShort: string;
+    messagesLabel: string;
+    myProfileLabel: string;
+    toggleLangLabel: string;
   };
   filters: {
     all: string;
@@ -105,6 +109,11 @@ export interface TranslationDictionary {
     offlineMessage: string;
     errorTitle: string;
     errorMessage: string;
+    permissionDeniedTitle: string;
+    permissionDeniedMessage: string;
+    errorBoundaryTitle: string;
+    errorBoundaryMessage: string;
+    reloadPage: string;
     retry: string;
   };
   relativeTime: {
@@ -207,6 +216,21 @@ export interface TranslationDictionary {
     signIn: string;
     viewProfile: string;
     profileNotFound: string;
+    boardSubtitle: string;
+    boardEmptyHint: string;
+    loadingBuddies: string;
+    buddyLoadError: string;
+    safetyNoteLabel: string;
+    meetLabel: string;
+    postedBadge: string;
+    signInGoogle: string;
+    noProfileYet: string;
+    memberBadge: string;
+    privacyGuaranteeTitle: string;
+    privacyGuaranteeBody: string;
+    dangerZoneTitle: string;
+    dangerZoneDesc: string;
+    concertFallback: string;
   };
   chat: {
     title: string;
@@ -263,6 +287,10 @@ export const translations: Record<Language, TranslationDictionary> = {
         soldOut: '✕ บัตรหมด',
         noEvents: 'ไม่มีงาน / ยังไม่เปิดขาย',
       },
+      buddiesShort: 'หาเพื่อน',
+      messagesLabel: 'ข้อความส่วนตัว',
+      myProfileLabel: 'โปรไฟล์ของฉัน',
+      toggleLangLabel: 'สลับภาษา TH / EN',
     },
     filters: {
       all: 'ทั้งหมด',
@@ -346,6 +374,11 @@ export const translations: Record<Language, TranslationDictionary> = {
       offlineMessage: 'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตของคุณ',
       errorTitle: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
       errorMessage: 'ไม่สามารถเชื่อมต่อกับฐานข้อมูล Firestore ได้ในขณะนี้',
+      permissionDeniedTitle: 'ไม่มีสิทธิ์เข้าถึงข้อมูล',
+      permissionDeniedMessage: 'ระบบปฏิเสธคำขอนี้ (Permission Denied) กรุณาเข้าสู่ระบบหรือตรวจสอบสิทธิ์ของคุณ',
+      errorBoundaryTitle: 'เกิดข้อผิดพลาดในหน้าเว็บ',
+      errorBoundaryMessage: 'แอปพลิเคชันพบข้อผิดพลาดที่ไม่คาดคิด กรุณารีโหลดหน้าใหม่',
+      reloadPage: 'โหลดหน้าใหม่',
       retry: 'ลองใหม่อีกครั้ง',
     },
     relativeTime: {
@@ -448,6 +481,21 @@ export const translations: Record<Language, TranslationDictionary> = {
       signIn: 'เข้าสู่ระบบด้วย Google',
       viewProfile: 'ดูโปรไฟล์',
       profileNotFound: 'ไม่พบโปรไฟล์ผู้ใช้นี้ (อาจถูกลบแล้ว)',
+      boardSubtitle: 'บอร์ดชุมชน (30 โพสต์เปิดล่าสุด)',
+      boardEmptyHint: 'เปิดรายละเอียดคอนเสิร์ตใดก็ได้จากแผนที่ เพื่อโพสต์หาเพื่อนในงานนั้น!',
+      loadingBuddies: 'กำลังโหลดโพสต์หาเพื่อน...',
+      buddyLoadError: 'ไม่สามารถโหลดโพสต์หาเพื่อนได้ในขณะนี้',
+      safetyNoteLabel: 'คำแนะนำความปลอดภัย:',
+      meetLabel: 'จุดนัด:',
+      postedBadge: 'คุณโพสต์แล้ว',
+      signInGoogle: 'เข้าสู่ระบบด้วย Google',
+      noProfileYet: 'คุณยังไม่มีโปรไฟล์คอมมูนิตี้',
+      memberBadge: 'สมาชิกคอมมูนิตี้',
+      privacyGuaranteeTitle: 'ไม่เปิดเผยข้อมูลส่วนบุคคล (Zero PII)',
+      privacyGuaranteeBody: 'ระบบจัดเก็บเฉพาะชื่อแสดงผล แท็กตัวเลข 4 หลัก อิโมจิ และแนวเพลงที่คุณเลือกเท่านั้น จะไม่มีการเปิดเผยอีเมลหรือรูปโปรไฟล์ Google ให้ผู้อื่นเห็นในคอมมูนิตี้',
+      dangerZoneTitle: 'ลบบัญชีและข้อมูล',
+      dangerZoneDesc: 'ลบโปรไฟล์ของคุณพร้อมกับโพสต์หาเพื่อนทั้งหมดอย่างถาวร',
+      concertFallback: 'คอนเสิร์ต',
     },
     chat: {
       title: 'ข้อความส่วนตัว',
@@ -502,6 +550,10 @@ export const translations: Record<Language, TranslationDictionary> = {
         soldOut: '✕ Sold out',
         noEvents: 'No shows / Not open',
       },
+      buddiesShort: 'Buddies',
+      messagesLabel: 'Direct Messages',
+      myProfileLabel: 'My Profile',
+      toggleLangLabel: 'Switch language TH / EN',
     },
     filters: {
       all: 'All',
@@ -585,6 +637,11 @@ export const translations: Record<Language, TranslationDictionary> = {
       offlineMessage: 'Please check your internet connection.',
       errorTitle: 'Failed to load data',
       errorMessage: 'Could not connect to Firestore database at this time.',
+      permissionDeniedTitle: 'Permission denied',
+      permissionDeniedMessage: 'Access to this data was denied by security rules. Please sign in or check permissions.',
+      errorBoundaryTitle: 'Something went wrong',
+      errorBoundaryMessage: 'An unexpected error occurred while rendering this view. Please reload the page.',
+      reloadPage: 'Reload page',
       retry: 'Retry',
     },
     relativeTime: {
@@ -687,6 +744,21 @@ export const translations: Record<Language, TranslationDictionary> = {
       signIn: 'Sign in with Google',
       viewProfile: 'View profile',
       profileNotFound: 'Community profile not found (it may have been deleted).',
+      boardSubtitle: 'Community board (30 newest open posts)',
+      boardEmptyHint: 'Open any concert details from the map to post a request for that show!',
+      loadingBuddies: 'Loading buddy requests...',
+      buddyLoadError: 'Could not load buddy posts at this time.',
+      safetyNoteLabel: 'Safety Note:',
+      meetLabel: 'Meet:',
+      postedBadge: 'Posted',
+      signInGoogle: 'Sign in with Google',
+      noProfileYet: 'You do not have a community profile yet.',
+      memberBadge: 'Community Member',
+      privacyGuaranteeTitle: 'Zero PII Leakage Guarantee',
+      privacyGuaranteeBody: 'We only store your chosen community name, 4-digit tag, avatar emoji, and music preferences. Your email and Google photo are never revealed to other users.',
+      dangerZoneTitle: 'Danger Zone',
+      dangerZoneDesc: 'Permanently remove your community profile and all buddy requests created under your account.',
+      concertFallback: 'Concert',
     },
     chat: {
       title: 'Direct Messages',

@@ -3,9 +3,10 @@ import { User } from 'firebase/auth';
 import { EventDraft } from '../../types/draft';
 import { Venue } from '../../types/venue';
 import { EventStatus } from '../../types/event';
-import { subscribeToEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft, deleteEventDraft } from '../../services/draftService';
+import { fetchEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft } from '../../services/draftService';
 import { formatBangkokDateTime } from '../../utils/dateUtils';
-import { Language, translations } from '../../i18n';
+import { safeExternalUrl } from '../../utils/urlUtils';
+import { Language } from '../../i18n';
 import {
   Sparkles,
   CheckCircle2,
@@ -13,13 +14,9 @@ import {
   AlertTriangle,
   ExternalLink,
   Edit,
-  Trash2,
   CheckCheck,
   RefreshCw,
   MapPin,
-  Calendar,
-  Tag,
-  Music2,
   X,
 } from 'lucide-react';
 
@@ -27,15 +24,18 @@ interface AiReviewAdminProps {
   user: User | null;
   venues: Venue[];
   lang: Language;
+  onDataChanged?: () => void;
 }
 
-export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang }) => {
+export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang, onDataChanged }) => {
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<{ discoveredCount: number; savedCount: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [confirmRejectId, setConfirmRejectId] = useState<string | null>(null);
+  const [confirmBulkApprove, setConfirmBulkApprove] = useState(false);
 
   // Status selection per draft (defaults to 'not_open')
   const [draftStatuses, setDraftStatuses] = useState<Record<string, EventStatus>>({});
@@ -45,16 +45,20 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
   const [editFormData, setEditFormData] = useState<Partial<EventDraft>>({});
   const [editDraftStatus, setEditDraftStatus] = useState<EventStatus>('not_open');
 
-  useEffect(() => {
+  const loadDrafts = async () => {
     setLoading(true);
-    const unsubscribe = subscribeToEventDrafts(
-      (data) => {
-        setDrafts(data);
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-    return () => unsubscribe();
+    try {
+      const data = await fetchEventDrafts();
+      setDrafts(data);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load drafts.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDrafts();
   }, []);
 
   const handleRunDiscovery = async () => {
@@ -87,8 +91,8 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
         savedCount: data.savedCount || 0,
       });
       setSuccess(`Discovery completed! Discovered ${data.discoveredCount} items, saved ${data.savedCount} new pending drafts.`);
+      await loadDrafts();
     } catch (err: any) {
-      console.error('Discovery run error:', err);
       setError(err?.message || 'Failed to execute discovery.');
     } finally {
       setIsDiscovering(false);
@@ -97,7 +101,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
 
   const handleApprove = async (draft: EventDraft) => {
     if (!draft.matchedVenueId) {
-      alert('Please select a matched venue before approving this event draft.');
+      setError('Please select a matched venue before approving this event draft.');
       return;
     }
     const chosenStatus: EventStatus = draftStatuses[draft.id] || 'not_open';
@@ -105,30 +109,35 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
     try {
       await approveEventDraft(draft, chosenStatus);
       setSuccess(`Approved event "${draft.title}" with status "${chosenStatus}".`);
+      await loadDrafts();
+      onDataChanged?.();
     } catch (err: any) {
       setError(err?.message || 'Failed to approve draft.');
     }
   };
 
   const handleReject = async (draftId: string) => {
-    if (!confirm('Are you sure you want to reject and discard this draft?')) return;
     setError(null);
     try {
       await rejectEventDraft(draftId);
+      setConfirmRejectId(null);
       setSuccess('Draft rejected and discarded.');
+      await loadDrafts();
     } catch (err: any) {
       setError(err?.message || 'Failed to reject draft.');
     }
   };
 
+  const validDrafts = drafts.filter(
+    (d) => d.confidence >= 0.8 && (!d.warnings || d.warnings.length === 0) && d.matchedVenueId
+  );
+
   const handleApproveAllValid = async () => {
-    const validDrafts = drafts.filter((d) => d.confidence >= 0.8 && (!d.warnings || d.warnings.length === 0) && d.matchedVenueId);
     if (validDrafts.length === 0) {
-      alert('No valid drafts found matching criteria (confidence >= 0.8, no warnings, matched venue).');
+      setError('No valid drafts found matching criteria (confidence >= 0.8, no warnings, matched venue).');
+      setConfirmBulkApprove(false);
       return;
     }
-
-    if (!confirm(`Are you sure you want to approve all ${validDrafts.length} valid event drafts with status "not_open"?`)) return;
 
     setError(null);
     let approvedCount = 0;
@@ -137,7 +146,10 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
         await approveEventDraft(d, 'not_open');
         approvedCount++;
       }
+      setConfirmBulkApprove(false);
       setSuccess(`Successfully approved ${approvedCount} valid event drafts with status "not_open"!`);
+      await loadDrafts();
+      onDataChanged?.();
     } catch (err: any) {
       setError(err?.message || `Approved ${approvedCount} drafts before error occurred.`);
     }
@@ -168,6 +180,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
       setDraftStatuses((prev) => ({ ...prev, [editingDraft.id]: editDraftStatus }));
       setSuccess('Draft updated successfully.');
       setEditingDraft(null);
+      await loadDrafts();
     } catch (err: any) {
       setError(err?.message || 'Failed to update draft.');
     }
@@ -192,15 +205,31 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
           <p className="text-sm text-neutral-400">Discover upcoming concerts via AI search grounding and review drafts before publishing.</p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {drafts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={loadDrafts}
+            disabled={loading}
+            className="px-3 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm rounded-xl border border-neutral-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            aria-label="Refresh drafts"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+          {drafts.length > 0 && !confirmBulkApprove && (
             <button
               type="button"
-              onClick={handleApproveAllValid}
+              onClick={() => {
+                if (validDrafts.length === 0) {
+                  setError('No valid drafts found matching criteria (confidence >= 0.8, no warnings, matched venue).');
+                  return;
+                }
+                setConfirmBulkApprove(true);
+              }}
               className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-lime-400 font-bold text-sm rounded-xl border border-lime-500/30 transition-colors flex items-center gap-2 cursor-pointer"
             >
               <CheckCheck className="w-4 h-4" />
-              Approve All Valid (Confidence ≥ 0.8)
+              Approve All Valid ({validDrafts.length})
             </button>
           )}
           <button
@@ -214,6 +243,30 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
           </button>
         </div>
       </div>
+
+      {confirmBulkApprove && (
+        <div className="p-3.5 bg-lime-950/40 border border-lime-500/40 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+          <span className="text-lime-200 font-mono">
+            Approve all {validDrafts.length} valid event drafts with status "not_open"?
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmBulkApprove(false)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApproveAllValid}
+              className="px-3 py-1.5 rounded-lg bg-lime-400 text-black font-bold cursor-pointer"
+            >
+              Confirm Approve
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="p-3 bg-red-950/50 border border-red-500/30 text-red-300 text-sm rounded-xl">{error}</div>}
       {success && <div className="p-3 bg-lime-950/50 border border-lime-500/30 text-lime-300 text-sm rounded-xl">{success}</div>}
@@ -263,9 +316,9 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
                         <span className="px-2.5 py-0.5 rounded-md bg-neutral-800 text-neutral-300 border border-neutral-700 font-mono text-xs">
                           Source: {draft.sourceName}
                         </span>
-                        {draft.sourceUrl && (
+                        {safeExternalUrl(draft.sourceUrl) && (
                           <a
-                            href={draft.sourceUrl}
+                            href={safeExternalUrl(draft.sourceUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-lime-400 hover:underline font-mono inline-flex items-center gap-1"
@@ -305,14 +358,33 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
                         <Edit className="w-3.5 h-3.5" />
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleReject(draft.id)}
-                        className="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 font-medium text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        Reject
-                      </button>
+                      {confirmRejectId === draft.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleReject(draft.id)}
+                            className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                          >
+                            Confirm Reject
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRejectId(null)}
+                            className="px-2.5 py-1.5 bg-neutral-800 text-neutral-300 text-xs rounded-xl cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRejectId(draft.id)}
+                          className="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 font-medium text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          Reject
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleApprove(draft)}
@@ -370,6 +442,7 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
                         onChange={async (e) => {
                           const newVenueId = e.target.value || null;
                           await updateEventDraft(draft.id, { matchedVenueId: newVenueId });
+                          await loadDrafts();
                         }}
                         className="px-3 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-white text-xs focus:outline-none focus:border-lime-400 font-medium w-full sm:w-64"
                       >

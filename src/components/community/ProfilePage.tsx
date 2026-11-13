@@ -64,12 +64,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   return (
     <div className="fixed inset-0 z-1000 bg-neutral-950 text-white flex flex-col overflow-hidden animate-in fade-in">
       {/* Header */}
-      <header className="p-4 border-b border-neutral-850 bg-neutral-900/90 backdrop-blur-md flex items-center justify-between shrink-0">
+      <header className="p-3 sm:p-4 border-b border-neutral-850 bg-neutral-900/90 backdrop-blur-md flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="p-2 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
+            aria-label={t.community.backToMap}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -91,14 +92,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         {!profile ? (
           <div className="p-6 rounded-2xl bg-neutral-900/80 border border-neutral-800 text-center space-y-3">
             <p className="text-sm text-neutral-300">
-              {lang === 'th'
-                ? 'คุณยังไม่มีโปรไฟล์คอมมูนิตี้'
-                : 'You do not have a community profile yet.'}
+              {t.community.noProfileYet}
             </p>
             <button
               type="button"
               onClick={() => setIsEditOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+              className="px-5 py-2.5 min-h-[44px] rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
             >
               {t.community.chooseNameTitle}
             </button>
@@ -107,20 +106,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <>
             {/* Identity Card */}
             <div className="p-5 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-4xl p-2 rounded-2xl bg-neutral-800 border border-neutral-700">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-4xl p-2 rounded-2xl bg-neutral-800 border border-neutral-700 shrink-0">
                     {profile.avatarEmoji}
                   </span>
-                  <div>
-                    <h2 className="text-lg font-bold text-white">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white truncate">
                       {profile.displayName}
-                      <span className="text-neutral-500 font-mono text-sm ml-1.5 font-normal">
+                      <span className="text-neutral-400 font-mono text-sm ml-1.5 font-normal">
                         #{profile.tag}
                       </span>
                     </h2>
                     <span className="text-xs text-lime-400 font-mono">
-                      Community Member
+                      {t.community.memberBadge}
                     </span>
                   </div>
                 </div>
@@ -128,7 +127,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-xs font-mono text-neutral-200 transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl bg-neutral-800 hover:bg-neutral-750 text-xs font-mono text-neutral-200 transition-all cursor-pointer shrink-0"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>{t.community.editProfile}</span>
@@ -167,12 +166,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <ShieldCheck className="w-5 h-5 text-lime-400 shrink-0 mt-0.5" />
               <div className="text-xs text-neutral-400 leading-relaxed space-y-1">
                 <span className="font-bold text-neutral-200 block">
-                  Zero PII Leakage Guarantee
+                  {t.community.privacyGuaranteeTitle}
                 </span>
                 <p>
-                  {lang === 'th'
-                    ? 'ระบบจัดเก็บเฉพาะชื่อแสดงผล, แท็กตัวเลข 4 หลัก, อิโมจิ และแนวเพลงที่คุณเลือกเท่านั้น จะไม่มีการเปิดเผยอีเมลหรือรูปโปรไฟล์ Google ให้ผู้อื่นเห็นในคอมมูนิตี้'
-                    : 'We only store your chosen community name, 4-digit tag, avatar emoji, and music preferences. Your email and Google photo are never revealed to other users.'}
+                  {t.community.privacyGuaranteeBody}
                 </p>
               </div>
             </div>
@@ -181,12 +178,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="p-4 rounded-2xl bg-red-950/20 border border-red-900/40 space-y-3">
               <div className="flex items-center gap-2 text-red-400 text-xs font-bold uppercase tracking-wider">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>Danger Zone</span>
+                <span>{t.community.dangerZoneTitle}</span>
               </div>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                {lang === 'th'
-                  ? 'ลบโปรไฟล์ของคุณพร้อมกับคำขอหาเพื่อนทั้งหมดอย่างถาวร'
-                  : 'Permanently remove your community profile and all buddy requests created under your account.'}
+                {t.community.dangerZoneDesc}
               </p>
 
               {deleteError && (
@@ -215,7 +210,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       type="button"
                       onClick={() => setConfirmDelete(false)}
                       disabled={isDeleting}
-                      className="flex-1 py-2 px-3 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold cursor-pointer"
+                      className="flex-1 min-h-[44px] py-2 px-3 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold cursor-pointer"
                     >
                       {t.community.cancel}
                     </button>
@@ -223,7 +218,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       type="button"
                       onClick={handleDeleteProfile}
                       disabled={isDeleting}
-                      className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                      className="flex-1 min-h-[44px] py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
                     >
                       {isDeleting ? '...' : t.community.deletePost}
                     </button>
