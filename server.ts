@@ -200,39 +200,33 @@ async function startServer() {
   app.set('trust proxy', 1);
 
   const distPath = path.join(__dirname, 'dist');
-  const isProduction =
-    process.env.NODE_ENV === 'production' || fs.existsSync(path.join(distPath, 'index.html'));
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // Security Headers Middleware
-  app.use((req, res, next) => {
-    const scriptSrc = isProduction
-      ? "script-src 'self' https://apis.google.com"
-      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com";
-    const connectSrc = isProduction
-      ? "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com wss://*.firebaseio.com"
-      : "connect-src 'self' ws: wss: https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com wss://*.firebaseio.com";
+  // Security Headers Middleware (production only, so development preview iframe embedding is never blocked)
+  if (isProduction) {
+    app.use((req, res, next) => {
+      const csp = [
+        "default-src 'self'",
+        "script-src 'self' https://apis.google.com",
+        "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
+        "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com wss://*.firebaseio.com",
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
+      ].join('; ');
 
-    const csp = [
-      "default-src 'self'",
-      scriptSrc,
-      "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
-      connectSrc,
-      "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join('; ');
-
-    res.setHeader('Content-Security-Policy', csp);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    next();
-  });
+      res.setHeader('Content-Security-Policy', csp);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+      next();
+    });
+  }
 
   app.use(express.json({ limit: '20kb' }));
 
@@ -747,7 +741,7 @@ Provide:
     app.use(vite.middlewares);
   }
 
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = isProduction ? Number(process.env.PORT) || 3000 : 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (${isProduction ? 'production' : 'development'})`);
   });
