@@ -13,6 +13,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { EventDraft } from '../types/draft';
 import { EventStatus } from '../types/event';
+import { parseStrictBangkokDate } from '../utils/dateUtils';
 
 const COLLECTION_NAME = 'eventDrafts';
 const EVENTS_COLLECTION = 'events';
@@ -23,21 +24,27 @@ export async function fetchEventDrafts(): Promise<EventDraft[]> {
     const snapshot = await getDocs(q);
     return snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
+      const rawStartAt =
+        typeof data.startAt === 'string'
+          ? data.startAt
+          : data.startAt?.toDate
+          ? data.startAt.toDate().toISOString()
+          : '';
       return {
         id: docSnap.id,
         title: data.title ?? '',
-        artists: data.artists ?? [],
+        artists: Array.isArray(data.artists) ? data.artists : [],
         venueName: data.venueName ?? '',
         promoterName: data.promoterName || null,
-        startAt: data.startAt ?? new Date().toISOString(),
+        startAt: rawStartAt,
         priceText: data.priceText || null,
-        genres: data.genres ?? [],
+        genres: Array.isArray(data.genres) ? data.genres : [],
         ticketUrl: data.ticketUrl || null,
         sourceUrl: data.sourceUrl ?? '',
         sourceName: data.sourceName ?? '',
         confidence: Number(data.confidence ?? 0.5),
         notes: data.notes || null,
-        warnings: data.warnings ?? [],
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
         matchedVenueId: data.matchedVenueId || null,
         fingerprint: data.fingerprint ?? '',
         reviewStatus: data.reviewStatus ?? 'pending',
@@ -73,16 +80,17 @@ export async function approveEventDraft(
   draft: EventDraft,
   selectedStatus: EventStatus = 'not_open'
 ): Promise<string> {
-  if (!draft.matchedVenueId) {
-    throw new Error('Cannot approve event draft without a matched venue.');
+  const venueId = typeof draft.matchedVenueId === 'string' ? draft.matchedVenueId.trim() : '';
+  if (!venueId || !/^[a-zA-Z0-9_-]{1,128}$/.test(venueId)) {
+    throw new Error('Cannot approve event draft without a valid matched venue.');
   }
 
   // Dates: if startAt is invalid, throw an error and block approval instead of using the current time
   if (!draft.startAt || typeof draft.startAt !== 'string') {
     throw new Error('Event draft startAt date is missing or invalid.');
   }
-  const startDate = new Date(draft.startAt);
-  if (isNaN(startDate.getTime())) {
+  const startDate = parseStrictBangkokDate(draft.startAt);
+  if (!startDate || isNaN(startDate.getTime())) {
     throw new Error(`Invalid startAt date "${draft.startAt}". Cannot approve draft.`);
   }
   const startTimestamp = Timestamp.fromDate(startDate);
@@ -91,22 +99,36 @@ export async function approveEventDraft(
   const validStatuses: EventStatus[] = ['available', 'low', 'sold_out', 'not_open', 'cancelled'];
   const status: EventStatus = validStatuses.includes(selectedStatus) ? selectedStatus : 'not_open';
 
+  const cleanTitle = (draft.title || '').trim().slice(0, 120);
+  if (cleanTitle.length === 0) {
+    throw new Error('Cannot approve event draft with an empty title.');
+  }
+
   const eventId = `evt_ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const eventRef = doc(db, EVENTS_COLLECTION, eventId);
   const path = `${EVENTS_COLLECTION}/${eventId}`;
 
   // firestore.rules reject null for optional fields.
   // Build the event object without optional keys when empty (promoterId, ticketUrl, igPostUrl, posterUrl, sourceUrl omitted).
-  const cleanTitle = draft.title.trim().slice(0, 120);
-  const cleanArtists = draft.artists.map((a) => a.trim()).filter(Boolean).slice(0, 20);
+  const cleanArtists = (Array.isArray(draft.artists) ? draft.artists : [])
+    .map((a) => String(a || '').trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const cleanGenres = (Array.isArray(draft.genres) ? draft.genres : [])
+    .map((g) => String(g || '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
 
   const eventPayload: Record<string, any> = {
     title: cleanTitle,
-    artists: cleanArtists.length > 0 ? cleanArtists : [cleanTitle || 'Indie Artist'],
-    venueId: draft.matchedVenueId,
+    artists: cleanArtists.length > 0 ? cleanArtists : [cleanTitle],
+    venueId,
     startAt: startTimestamp,
-    priceText: (draft.priceText || 'Check ticket page').trim().slice(0, 60),
-    genres: draft.genres.map((g) => g.trim()).filter(Boolean).slice(0, 8),
+    priceText: (typeof draft.priceText === 'string' && draft.priceText.trim()
+      ? draft.priceText.trim()
+      : 'Check ticket page'
+    ).slice(0, 60),
+    genres: cleanGenres,
     status,
     statusUpdatedAt: serverTimestamp(),
     statusSource: 'admin',
@@ -116,10 +138,14 @@ export async function approveEventDraft(
   };
 
   // Only include optional keys if non-empty string, NEVER null
-  if (draft.ticketUrl && typeof draft.ticketUrl === 'string' && draft.ticketUrl.trim().length > 0) {
-    eventPayload.ticketUrl = draft.ticketUrl.trim().slice(0, 500);
+  if (typeof draft.ticketUrl === 'string' && draft.ticketUrl.trim().length > 0) {
+    const cleanTicket = draft.ticketUrl.trim().slice(0, 500);
+    if (!cleanTicket.startsWith('https://')) {
+      throw new Error('Ticket URL must start with https:// when provided.');
+    }
+    eventPayload.ticketUrl = cleanTicket;
   }
-  if (draft.sourceUrl && typeof draft.sourceUrl === 'string' && draft.sourceUrl.trim().length > 0) {
+  if (typeof draft.sourceUrl === 'string' && draft.sourceUrl.trim().length > 0) {
     eventPayload.sourceUrl = draft.sourceUrl.trim().slice(0, 500);
   }
 

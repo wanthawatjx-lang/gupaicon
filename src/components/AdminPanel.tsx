@@ -8,7 +8,7 @@ import { createVenue, updateVenue, deleteVenue, seedSampleVenues } from '../serv
 import { createPromoter, updatePromoter, deletePromoter, seedSamplePromoters } from '../services/promoterService';
 import { createEvent, updateEvent, updateEventStatus, deleteEvent, seedSampleEvents } from '../services/eventService';
 import { STATUS_MAP } from '../utils/statusUtils';
-import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
+import { formatBangkokDateTime, parseTimestampToDate, formatDateForInput } from '../utils/dateUtils';
 import {
   Lock,
   LogOut,
@@ -98,7 +98,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     artists: [''],
     venueId: venues[0]?.id || '',
     promoterId: promoters[0]?.id || '',
-    startAtIso: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+    startAtIso: formatDateForInput(new Date(Date.now() + 86400000)),
     priceText: '350 THB',
     genres: ['Indie Rock'],
     ticketUrl: '',
@@ -303,7 +303,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       artists: [''],
       venueId: venues[0]?.id || '',
       promoterId: promoters[0]?.id || '',
-      startAtIso: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+      startAtIso: formatDateForInput(new Date(Date.now() + 86400000)),
       priceText: '350 THB',
       genres: ['Indie Rock'],
       ticketUrl: '',

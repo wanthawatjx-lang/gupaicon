@@ -12,6 +12,7 @@ import { db } from '../firebase';
 import { Venue } from '../types/venue';
 import { Promoter } from '../types/promoter';
 import { ConcertEvent, EventStatus } from '../types/event';
+import { parseStrictBangkokDate, formatIsoInBangkok } from '../utils/dateUtils';
 
 // Robust RFC 4180 CSV Parser handling quoted fields, commas, line breaks, and UTF-8 BOM
 export function parseCSV(text: string): string[][] {
@@ -256,11 +257,10 @@ export function validateEventsCSV(
     let startAtDate: Date | null = null;
     let startAtIso = '';
     if (startAtStr) {
-      const isoFormat = startAtStr.replace(' ', 'T') + ':00+07:00';
-      const parsed = new Date(isoFormat);
-      if (!isNaN(parsed.getTime())) {
+      const parsed = parseStrictBangkokDate(startAtStr);
+      if (parsed && !isNaN(parsed.getTime())) {
         startAtDate = parsed;
-        startAtIso = isoFormat;
+        startAtIso = formatIsoInBangkok(parsed);
       }
     }
 

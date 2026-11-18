@@ -28,7 +28,7 @@ const db = firebaseConfig.firestoreDatabaseId
 
 const adminAuth = getAuth(adminApp);
 
-// Initialize Gemini Client server-side with multi-key rotation and rate-limit resilience
+// Initialize Gemini Client server-side (single GEMINI_API_KEY)
 const ai = geminiClient;
 
 let isDiscovering = false;
@@ -68,36 +68,95 @@ function incrementDailyPreviewCalls(): void {
   serverDailyPreviewCalls++;
 }
 
+// In-memory cache for event previews (24 hours TTL)
+const previewCache = new Map<string, { data: any; expiresAt: number }>();
+
 // Accepts startAt only if ISO 8601 with an explicit offset; if no offset, treats as Asia/Bangkok (+07:00)
 function parseAndNormalizeDiscoverDate(rawStartAt: any): { date: Date; isoBangkok: string } | null {
   if (!rawStartAt || typeof rawStartAt !== 'string') return null;
   const s = rawStartAt.trim();
+  if (!s) return null;
 
-  // Check if it has an explicit offset (Z, +HH:MM, -HH:MM, +HHMM, -HHMM)
-  const hasOffset = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(s);
-
-  let targetStr = s;
-  if (!hasOffset) {
-    // If there is no offset, treat it as Asia/Bangkok (+07:00)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-      targetStr = `${s}T20:00:00+07:00`;
-    } else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?$/.test(s)) {
-      targetStr = `${s.replace(' ', 'T')}+07:00`;
-    } else {
+  // Date-only: treat as 20:00:00 in Asia/Bangkok (+07:00)
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const calCheck = new Date(Date.UTC(year, month - 1, day));
+    if (
+      calCheck.getUTCFullYear() !== year ||
+      calCheck.getUTCMonth() !== month - 1 ||
+      calCheck.getUTCDate() !== day
+    ) {
       return null;
     }
-  } else {
-    // Must be valid ISO 8601 with offset
-    if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(s)) {
-      return null;
-    }
-    targetStr = s.replace(' ', 'T');
+    const isoBangkok = `${s}T20:00:00+07:00`;
+    const date = new Date(isoBangkok);
+    return isNaN(date.getTime()) ? null : { date, isoBangkok };
   }
 
-  const date = new Date(targetStr);
+  // Date-time with optional seconds, fractional seconds, and optional offset
+  const dtMatch = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?(Z|[+-]\d{2}(?::?\d{2})?)?$/i.exec(
+    s
+  );
+  if (!dtMatch) return null;
+
+  const year = Number(dtMatch[1]);
+  const month = Number(dtMatch[2]);
+  const day = Number(dtMatch[3]);
+  const hour = Number(dtMatch[4]);
+  const minute = Number(dtMatch[5]);
+  const second = dtMatch[6] !== undefined ? Number(dtMatch[6]) : 0;
+  const frac = dtMatch[7] || '';
+  const rawOffset = dtMatch[8];
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+
+  const calCheck = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calCheck.getUTCFullYear() !== year ||
+    calCheck.getUTCMonth() !== month - 1 ||
+    calCheck.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  let normalizedOffset = '+07:00';
+  if (rawOffset) {
+    if (rawOffset.toUpperCase() === 'Z') {
+      normalizedOffset = 'Z';
+    } else {
+      const sign = rawOffset[0];
+      const digits = rawOffset.slice(1).replace(':', '');
+      const offHour = Number(digits.slice(0, 2));
+      const offMin = digits.length >= 4 ? Number(digits.slice(2, 4)) : 0;
+      if (offHour > 23 || offMin > 59) return null;
+      normalizedOffset = `${sign}${String(offHour).padStart(2, '0')}:${String(offMin).padStart(2, '0')}`;
+    }
+  }
+
+  const isoInput = `${dtMatch[1]}-${dtMatch[2]}-${dtMatch[3]}T${dtMatch[4]}:${dtMatch[5]}:${String(second).padStart(2, '0')}${frac}${normalizedOffset}`;
+  const date = new Date(isoInput);
   if (isNaN(date.getTime())) return null;
 
-  return { date, isoBangkok: targetStr };
+  const bkkMs = date.getTime() + 7 * 60 * 60 * 1000;
+  const isoBangkok = new Date(bkkMs).toISOString().slice(0, 19) + '+07:00';
+  return { date, isoBangkok };
 }
 
 function checkRateLimit(
@@ -119,7 +178,7 @@ function checkRateLimit(
   return true;
 }
 
-// Clean up old rate limit records periodically
+// Clean up old rate limit and cache records periodically
 setInterval(() => {
   const now = Date.now();
   for (const [ip, record] of ipRateLimits.entries()) {
@@ -130,6 +189,9 @@ setInterval(() => {
   }
   for (const [userId, record] of userPreviewLimits.entries()) {
     if (now > record.resetAt) userPreviewLimits.delete(userId);
+  }
+  for (const [cacheKey, entry] of previewCache.entries()) {
+    if (now >= entry.expiresAt) previewCache.delete(cacheKey);
   }
 }, 60000);
 
@@ -252,7 +314,7 @@ async function startServer() {
     }
 
     if (!ai.hasAvailableKey()) {
-      return res.status(500).json({ error: 'Discovery service temporarily unavailable (no Gemini API keys configured).' });
+      return res.status(500).json({ error: 'Discovery service temporarily unavailable (GEMINI_API_KEY is not configured).' });
     }
 
     // Validate body (must be empty or a plain object)
@@ -456,18 +518,15 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
       });
     } catch (err: any) {
       isDiscovering = false;
-      if (err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
+      if (err?.code === 'RATE_LIMITED' || err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
         return res.status(429).json({
-          error: 'All configured Gemini API keys have reached rate limits (429). Please wait a few minutes or add more keys in .env.',
-          code: 'ALL_KEYS_RATE_LIMITED',
+          error: 'Gemini API rate limit exceeded (429). Please wait a few minutes and try again. / โควตา Gemini API เต็มชั่วคราว (429) กรุณารอสักครู่แล้วลองใหม่',
+          code: 'RATE_LIMITED',
         });
       }
       return res.status(500).json({ error: 'Discovery operation failed' });
     }
   });
-
-  // In-memory cache for event previews (24 hours TTL)
-  const previewCache = new Map<string, { data: any; expiresAt: number }>();
 
   // POST /api/event-preview - AI-Powered Event & Venue Vibe Breakdown using geminiClient
   app.post('/api/event-preview', async (req, res) => {
@@ -537,7 +596,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
       } else if (eventData.startAt?.toDate) {
         startMs = eventData.startAt.toDate().getTime();
       } else if (typeof eventData.startAt === 'string') {
-        startMs = new Date(eventData.startAt).getTime();
+        startMs = parseAndNormalizeDiscoverDate(eventData.startAt)?.date.getTime() ?? null;
       }
 
       if (!startMs || isNaN(startMs) || startMs < Date.now()) {
@@ -656,13 +715,13 @@ Provide:
       previewCache.set(cacheKey, { data: previewData, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
       return res.json({ success: true, preview: previewData });
     } catch (err: any) {
-      if (err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
+      if (err?.code === 'RATE_LIMITED' || err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
         return res.status(429).json({
           error:
             cleanLang === 'en'
-              ? 'All Gemini API keys are currently rate-limited (HTTP 429). Please wait a moment before retrying.'
-              : 'โควตา Gemini API กำลังติด Rate Limit (429) กรุณารอสักครู่แล้วกดลองใหม่',
-          code: 'ALL_KEYS_RATE_LIMITED',
+              ? 'Gemini API rate limit exceeded (HTTP 429). Please wait a moment before retrying.'
+              : 'โควตา Gemini API เต็มชั่วคราว (429) กรุณารอสักครู่แล้วกดลองใหม่',
+          code: 'RATE_LIMITED',
         });
       }
       return res.status(500).json({

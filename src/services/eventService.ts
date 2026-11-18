@@ -42,7 +42,7 @@ export async function fetchEvents(): Promise<ConcertEvent[]> {
         ticketUrl: data.ticketUrl ?? '',
         igPostUrl: data.igPostUrl ?? '',
         posterUrl: data.posterUrl ?? '',
-        status: (data.status as EventStatus) || 'notopen',
+        status: (data.status as EventStatus) || 'not_open',
         statusUpdatedAt: data.statusUpdatedAt || data.createdAt,
         statusSource: data.statusSource === 'organizer' ? 'organizer' : 'admin',
         origin: data.origin,
@@ -66,9 +66,10 @@ export async function createEvent(
   const path = `${COLLECTION_NAME}/${docId}`;
 
   const startDate = new Date(data.startAtIso);
-  const startTimestamp = isNaN(startDate.getTime())
-    ? Timestamp.now()
-    : Timestamp.fromDate(startDate);
+  if (isNaN(startDate.getTime())) {
+    throw new Error('Invalid event start date.');
+  }
+  const startTimestamp = Timestamp.fromDate(startDate);
 
   try {
     const payload: Record<string, any> = {

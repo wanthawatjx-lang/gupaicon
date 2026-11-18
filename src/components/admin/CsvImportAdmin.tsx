@@ -100,6 +100,7 @@ export const CsvImportAdmin: React.FC<CsvImportAdminProps> = ({ onDataChanged })
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const downloadEventsTemplate = () => {
@@ -114,6 +115,7 @@ export const CsvImportAdmin: React.FC<CsvImportAdminProps> = ({ onDataChanged })
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // --- Handle Venues File Upload ---
@@ -225,7 +227,7 @@ export const CsvImportAdmin: React.FC<CsvImportAdminProps> = ({ onDataChanged })
       setSuccessMessage(
         `Successfully imported ${res.eventsImported} events and created ${res.promotersCreated} new promoters!`
       );
-      setEventPreviewRows(undefined as any);
+      setEventPreviewRows([]);
       setEventFileText('');
       await loadBaseData();
       onDataChanged();

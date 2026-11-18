@@ -4,7 +4,7 @@ import { EventDraft } from '../../types/draft';
 import { Venue } from '../../types/venue';
 import { EventStatus } from '../../types/event';
 import { fetchEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft } from '../../services/draftService';
-import { formatBangkokDateTime } from '../../utils/dateUtils';
+import { formatBangkokDateTime, parseStrictBangkokDate } from '../../utils/dateUtils';
 import { safeExternalUrl } from '../../utils/urlUtils';
 import { Language } from '../../i18n';
 import {
@@ -175,8 +175,32 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
     e.preventDefault();
     if (!editingDraft) return;
     setError(null);
+
+    const cleanTitle = (editFormData.title || '').trim();
+    if (!cleanTitle) {
+      setError('Title is required.');
+      return;
+    }
+
+    const startStr = (editFormData.startAt || '').trim();
+    if (!startStr || !parseStrictBangkokDate(startStr)) {
+      setError('Invalid start date/time. Use ISO format (e.g. 2026-12-31T20:00:00+07:00 or YYYY-MM-DD HH:mm).');
+      return;
+    }
+
+    const cleanTicketUrl = (editFormData.ticketUrl || '').trim();
+    if (cleanTicketUrl && !cleanTicketUrl.startsWith('https://')) {
+      setError('Ticket URL must start with https:// when provided.');
+      return;
+    }
+
     try {
-      await updateEventDraft(editingDraft.id, editFormData);
+      await updateEventDraft(editingDraft.id, {
+        ...editFormData,
+        title: cleanTitle,
+        startAt: startStr,
+        ticketUrl: cleanTicketUrl || null,
+      });
       setDraftStatuses((prev) => ({ ...prev, [editingDraft.id]: editDraftStatus }));
       setSuccess('Draft updated successfully.');
       setEditingDraft(null);
