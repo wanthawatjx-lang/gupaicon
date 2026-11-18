@@ -10,6 +10,7 @@ import { fetchEventReports, submitCrowdReport } from '../services/reportService'
 import { formatBangkokDateTime, parseStrictBangkokDate } from '../utils/dateUtils';
 import { buildIcs, buildGoogleCalendarUrl, buildIcsFileName, triggerIcsDownload } from '../utils/calendar';
 import { safeExternalUrl } from '../utils/urlUtils';
+import { postApiJson } from '../utils/apiClient';
 import { Language, translations } from '../i18n';
 import { BuddyPost, UserProfile } from '../types/community';
 import { fetchEventBuddyPosts, fetchBlockedUids, blockUser } from '../services/communityService';
@@ -157,27 +158,11 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
     setIsLoadingAi(true);
     setAiError(null);
     try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/event-preview', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          eventId: event.id,
-          lang,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          data.error ||
-            (lang === 'th'
-              ? 'ไม่สามารถดึงข้อมูล AI Vibe ได้ กรุณาลองใหม่อีกครั้ง'
-              : 'Failed to generate preview. Please try again.')
-        );
-      }
+      const data = await postApiJson<{ success?: boolean; preview?: any; error?: string }>(
+        '/api/event-preview',
+        { eventId: event.id, lang },
+        { user, lang }
+      );
       if (data.success && data.preview) {
         setAiPreview(data.preview);
       } else {

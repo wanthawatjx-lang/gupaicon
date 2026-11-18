@@ -53,14 +53,28 @@ async function runSeed() {
     console.log(`✓ Seeded Promoter: ${promoter.name}`);
   }
 
-  // 3. Seed Events
+  // 3. Seed Events (relative to today: +3, +5, +8, +12, +20 days at 19:00 Asia/Bangkok)
+  const sampleDayOffsets = [3, 5, 8, 12, 20];
+  const baseNowMs = Date.now();
+  const getRelativeSampleStartDate = (index: number): Date => {
+    const offsetDays = sampleDayOffsets[index] ?? 3 + index * 4;
+    const bkkNow = new Date(baseNowMs + 7 * 60 * 60 * 1000);
+    const targetBkk = new Date(
+      Date.UTC(bkkNow.getUTCFullYear(), bkkNow.getUTCMonth(), bkkNow.getUTCDate() + offsetDays)
+    );
+    const yyyy = targetBkk.getUTCFullYear();
+    const mm = String(targetBkk.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(targetBkk.getUTCDate()).padStart(2, '0');
+    return new Date(`${yyyy}-${mm}-${dd}T19:00:00+07:00`);
+  };
+
   const eventsPath = path.resolve(process.cwd(), 'data/seed/events.json');
   const events = JSON.parse(fs.readFileSync(eventsPath, 'utf-8'));
   console.log(`Seeding ${events.length} events...`);
-  for (const event of events) {
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
     const eventRef = doc(db, 'events', event.id);
-    const startDate = new Date(event.startAt);
-    const updatedDate = new Date(event.statusUpdatedAt);
+    const startDate = getRelativeSampleStartDate(i);
 
     const payload: any = {
       title: event.title,
@@ -73,7 +87,7 @@ async function runSeed() {
       ticketUrl: event.ticketUrl,
       igPostUrl: event.igPostUrl,
       status: event.status,
-      statusUpdatedAt: Timestamp.fromDate(updatedDate),
+      statusUpdatedAt: serverTimestamp(),
       statusSource: 'admin',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -82,7 +96,7 @@ async function runSeed() {
       payload.posterUrl = event.posterUrl;
     }
     await setDoc(eventRef, payload);
-    console.log(`✓ Seeded Event: ${event.title}`);
+    console.log(`✓ Seeded Event: ${event.title} (${startDate.toISOString()})`);
   }
 
   console.log('Done! All sample venues, promoters, and events seeded successfully.');

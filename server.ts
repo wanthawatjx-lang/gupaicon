@@ -233,10 +233,10 @@ async function startServer() {
   // Handle malformed or oversized JSON payloads cleanly without stack traces
   app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (err?.type === 'entity.too.large' || err?.status === 413) {
-      return res.status(413).json({ error: 'Request payload too large.' });
+      return res.status(413).json({ error: 'Request payload too large.', code: 'PAYLOAD_TOO_LARGE' });
     }
     if (err instanceof SyntaxError && 'body' in err) {
-      return res.status(400).json({ error: 'Invalid JSON payload.' });
+      return res.status(400).json({ error: 'Invalid JSON payload.', code: 'INVALID_JSON' });
     }
     next(err);
   });
@@ -250,7 +250,7 @@ async function startServer() {
   app.use('/api', (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     if (!checkRateLimit(ipRateLimits, ip, 30, 60000)) {
-      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      return res.status(429).json({ error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' });
     }
     next();
   });
@@ -263,10 +263,10 @@ async function startServer() {
       try {
         const originUrl = new URL(origin);
         if (host && originUrl.host !== host) {
-          return res.status(403).json({ error: 'Forbidden' });
+          return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
         }
       } catch {
-        return res.status(403).json({ error: 'Forbidden' });
+        return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
       }
     }
     next();
@@ -276,23 +276,23 @@ async function startServer() {
   const verifyAdminAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
     }
     const token = authHeader.split('Bearer ')[1]?.trim();
     if (!token) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
     }
 
     try {
       const decoded = await adminAuth.verifyIdToken(token);
       if (decoded.email !== ADMIN_EMAIL || decoded.email_verified !== true) {
-        return res.status(403).json({ error: 'Forbidden' });
+        return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
       }
       (req as any).user = decoded;
       next();
     } catch {
       // Do not log token or detailed internal errors
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
     }
   };
 
@@ -727,10 +727,18 @@ Provide:
     }
   });
 
-  // Client Serving: Production static files or Vite dev middleware
+  // API-only 404 handler: any unmatched /api or /api/* route returns JSON, never HTML
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found', code: 'NOT_FOUND' });
+  });
+
+  // Client Serving: Production static files or Vite dev middleware (after all /api routes)
   if (isProduction) {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'API endpoint not found', code: 'NOT_FOUND' });
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   } else {
@@ -740,6 +748,26 @@ Provide:
     });
     app.use(vite.middlewares);
   }
+
+  // Final Express error handler: always return JSON { error, code }, never HTML
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (res.headersSent) {
+      return;
+    }
+    if (err?.type === 'entity.too.large' || err?.status === 413) {
+      return res.status(413).json({ error: 'Request payload too large.', code: 'PAYLOAD_TOO_LARGE' });
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      return res.status(400).json({ error: 'Invalid JSON payload.', code: 'INVALID_JSON' });
+    }
+    const status =
+      typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+    const code = typeof err?.code === 'string' && err.code ? err.code : 'INTERNAL_ERROR';
+    return res.status(status).json({
+      error: status === 500 ? 'Internal server error' : err?.message || 'Request failed',
+      code,
+    });
+  });
 
   const PORT = isProduction ? Number(process.env.PORT) || 3000 : 3000;
   app.listen(PORT, '0.0.0.0', () => {

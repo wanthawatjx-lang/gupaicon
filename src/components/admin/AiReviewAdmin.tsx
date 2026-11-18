@@ -6,6 +6,7 @@ import { EventStatus } from '../../types/event';
 import { fetchEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft } from '../../services/draftService';
 import { formatBangkokDateTime, parseStrictBangkokDate } from '../../utils/dateUtils';
 import { safeExternalUrl } from '../../utils/urlUtils';
+import { postApiJson } from '../../utils/apiClient';
 import { Language } from '../../i18n';
 import {
   Sparkles,
@@ -72,25 +73,17 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
     setDiscoverResult(null);
 
     try {
-      const idToken = await user.getIdToken();
-      const response = await fetch('/api/discover', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Discovery failed on server.');
-      }
+      const data = await postApiJson<{ discoveredCount?: number; savedCount?: number }>(
+        '/api/discover',
+        {},
+        { user, lang }
+      );
 
       setDiscoverResult({
         discoveredCount: data.discoveredCount || 0,
         savedCount: data.savedCount || 0,
       });
-      setSuccess(`Discovery completed! Discovered ${data.discoveredCount} items, saved ${data.savedCount} new pending drafts.`);
+      setSuccess(`Discovery completed! Discovered ${data.discoveredCount || 0} items, saved ${data.savedCount || 0} new pending drafts.`);
       await loadDrafts();
     } catch (err: any) {
       setError(err?.message || 'Failed to execute discovery.');

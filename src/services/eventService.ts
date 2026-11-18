@@ -189,16 +189,30 @@ export async function deleteEvent(id: string): Promise<void> {
   }
 }
 
+const SAMPLE_DAY_OFFSETS = [3, 5, 8, 12, 20];
+
+function getRelativeSampleStartDate(index: number, baseNowMs: number): Date {
+  const offsetDays = SAMPLE_DAY_OFFSETS[index] ?? 3 + index * 4;
+  const bkkNow = new Date(baseNowMs + 7 * 60 * 60 * 1000);
+  const targetBkk = new Date(
+    Date.UTC(bkkNow.getUTCFullYear(), bkkNow.getUTCMonth(), bkkNow.getUTCDate() + offsetDays)
+  );
+  const yyyy = targetBkk.getUTCFullYear();
+  const mm = String(targetBkk.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(targetBkk.getUTCDate()).padStart(2, '0');
+  return new Date(`${yyyy}-${mm}-${dd}T19:00:00+07:00`);
+}
+
 export async function seedSampleEvents(): Promise<number> {
   let seededCount = 0;
-  for (const item of sampleEvents) {
+  const baseNowMs = Date.now();
+  for (let i = 0; i < sampleEvents.length; i++) {
+    const item = sampleEvents[i];
     const docRef = doc(db, COLLECTION_NAME, item.id);
     const path = `${COLLECTION_NAME}/${item.id}`;
 
-    const startDate = new Date(item.startAt);
+    const startDate = getRelativeSampleStartDate(i, baseNowMs);
     const startTimestamp = Timestamp.fromDate(startDate);
-    const updatedDate = new Date(item.statusUpdatedAt);
-    const statusTimestamp = Timestamp.fromDate(updatedDate);
 
     try {
       const payload: Record<string, any> = {
@@ -209,7 +223,7 @@ export async function seedSampleEvents(): Promise<number> {
         priceText: item.priceText,
         genres: item.genres,
         status: item.status,
-        statusUpdatedAt: statusTimestamp,
+        statusUpdatedAt: serverTimestamp(),
         statusSource: 'admin',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

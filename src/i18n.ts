@@ -115,6 +115,7 @@ export interface TranslationDictionary {
     errorBoundaryMessage: string;
     reloadPage: string;
     retry: string;
+    serverInvalidResponse: string;
   };
   relativeTime: {
     justNow: string;
@@ -380,6 +381,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       errorBoundaryMessage: 'แอปพลิเคชันพบข้อผิดพลาดที่ไม่คาดคิด กรุณารีโหลดหน้าใหม่',
       reloadPage: 'โหลดหน้าใหม่',
       retry: 'ลองใหม่อีกครั้ง',
+      serverInvalidResponse: 'เซิร์ฟเวอร์ตอบสนองไม่ถูกต้อง กรุณาลองใหม่อีกครั้งในภายหลัง',
     },
     relativeTime: {
       justNow: 'เมื่อสักครู่',
@@ -643,6 +645,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       errorBoundaryMessage: 'An unexpected error occurred while rendering this view. Please reload the page.',
       reloadPage: 'Reload page',
       retry: 'Retry',
+      serverInvalidResponse: 'The server is not responding correctly, try again later',
     },
     relativeTime: {
       justNow: 'updated just now',

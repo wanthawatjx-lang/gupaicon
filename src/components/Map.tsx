@@ -8,6 +8,7 @@ import { ConcertEvent } from '../types/event';
 import { getVenueUrgentStatus, getStatusConfig, getStatusLabel, getStatusSymbol } from '../utils/statusUtils';
 import { formatBangkokDateTime } from '../utils/dateUtils';
 import { escapeHtml } from '../utils/urlUtils';
+import { postApiJson } from '../utils/apiClient';
 import { MAP_CONFIG } from '../constants/mapConfig';
 import { Language } from '../i18n';
 
@@ -112,29 +113,11 @@ export const Map: React.FC<MapProps> = memo(({
     setIsLoadingAi(true);
     setAiError(null);
     try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/event-preview', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          eventId: event.id,
-          lang,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(
-          data.error ||
-            (lang === 'th'
-              ? 'ไม่สามารถดึงข้อมูล AI Vibe ได้ กรุณาลองใหม่อีกครั้ง'
-              : 'Failed to load AI vibe preview. Please try again.')
-        );
-      }
+      const data = await postApiJson<{ success?: boolean; preview?: AiEventPreview; error?: string }>(
+        '/api/event-preview',
+        { eventId: event.id, lang },
+        { user, lang }
+      );
 
       if (data.success && data.preview) {
         setAiPreview(data.preview);
