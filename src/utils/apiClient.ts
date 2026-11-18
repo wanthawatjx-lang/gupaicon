@@ -58,27 +58,26 @@ export async function postApiJson<T = any>(
 
   const contentType = (response.headers.get('content-type') || '').toLowerCase();
   if (!contentType.includes('application/json')) {
-    throw new Error(fallbackInvalidResponse);
+    throw new Error(`${fallbackInvalidResponse} (HTTP ${response.status})`);
   }
 
   let data: any;
   try {
     data = await response.json();
   } catch {
-    throw new Error(fallbackInvalidResponse);
+    throw new Error(`${fallbackInvalidResponse} (HTTP ${response.status})`);
   }
 
   if (!response.ok) {
+    const serverCode =
+      data && typeof data.code === 'string' && data.code.trim() ? data.code.trim() : '';
     const serverMessage =
-      data && typeof data.error === 'string' && data.error.trim()
-        ? data.error.trim()
-        : null;
-    throw new Error(
-      serverMessage ||
-        (lang === 'th'
-          ? 'คำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
-          : 'Request failed. Please try again.')
-    );
+      data && typeof data.error === 'string' && data.error.trim() ? data.error.trim() : '';
+
+    const statusTag = serverCode ? `${response.status} ${serverCode}` : `${response.status}`;
+    const prefix =
+      lang === 'th' ? `ข้อผิดพลาดจากเซิร์ฟเวอร์ ${statusTag}` : `Server error ${statusTag}`;
+    throw new Error(serverMessage ? `${prefix}: ${serverMessage}` : prefix);
   }
 
   return data as T;

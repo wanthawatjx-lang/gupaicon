@@ -246,28 +246,114 @@ async function startServer() {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  const configuredOrigins = new Set<string>();
+  for (const rawEntry of (process.env.APP_ORIGIN || '').split(',')) {
+    const trimmed = rawEntry.trim();
+    if (!trimmed) continue;
+    try {
+      const u = new URL(trimmed);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        configuredOrigins.add(u.origin);
+      }
+    } catch {
+      // ignore invalid APP_ORIGIN entry
+    }
+  }
+
+  const isAllowedPreviewOrigin = (originUrl: URL): boolean => {
+    const { protocol, hostname } = originUrl;
+    if (protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
+      return true;
+    }
+    if (protocol === 'https:') {
+      if (
+        hostname === 'aistudio.google.com' ||
+        hostname.endsWith('.aistudio.google.com') ||
+        (hostname.startsWith('ais-dev-') && hostname.endsWith('.run.app')) ||
+        (hostname.startsWith('ais-pre-') && hostname.endsWith('.run.app'))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const getOwnRequestOrigins = (req: express.Request): Set<string> => {
+    const own = new Set<string>(configuredOrigins);
+    const rawXfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+    const proto = rawXfProto === 'http' || rawXfProto === 'https' ? rawXfProto : req.protocol || 'https';
+
+    const rawXfHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    if (rawXfHost) {
+      try {
+        own.add(new URL(`${proto}://${rawXfHost}`).origin);
+      } catch {
+        // ignore invalid header
+      }
+    }
+
+    const rawHost = String(req.headers.host || '').trim();
+    if (rawHost) {
+      try {
+        own.add(new URL(`${proto}://${rawHost}`).origin);
+      } catch {
+        // ignore invalid header
+      }
+      if (!isProduction && rawXfProto !== 'http' && rawXfProto !== 'https') {
+        try {
+          own.add(new URL(`http://${rawHost}`).origin);
+        } catch {
+          // ignore invalid header
+        }
+      }
+    }
+    return own;
+  };
+
+  // Origin & CORS enforcement for /api/* routes (before rate limiter so preflight & allowed errors carry CORS headers)
+  app.use('/api', (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      let originUrl: URL;
+      try {
+        originUrl = new URL(origin);
+      } catch {
+        return res.status(403).json({ error: 'Invalid request origin', code: 'FORBIDDEN_ORIGIN' });
+      }
+
+      if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') {
+        return res.status(403).json({ error: 'Invalid request origin protocol', code: 'FORBIDDEN_ORIGIN' });
+      }
+
+      const ownOrigins = getOwnRequestOrigins(req);
+      const isOwnOrigin = ownOrigins.has(originUrl.origin);
+      const allowed = isProduction ? isOwnOrigin : isOwnOrigin || isAllowedPreviewOrigin(originUrl);
+
+      if (!allowed) {
+        return res.status(403).json({ error: 'Origin not allowed', code: 'FORBIDDEN_ORIGIN' });
+      }
+
+      // Reflect only the validated exact origin (never wildcard '*' with credentials)
+      res.setHeader('Access-Control-Allow-Origin', originUrl.origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+      if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+      }
+    } else if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+    next();
+  });
+
   // General rate limiter for /api/* routes (30 requests per minute per IP)
   app.use('/api', (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     if (!checkRateLimit(ipRateLimits, ip, 30, 60000)) {
       return res.status(429).json({ error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' });
-    }
-    next();
-  });
-
-  // Same-origin CORS enforcement for /api/* routes
-  app.use('/api', (req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin) {
-      const host = req.headers.host;
-      try {
-        const originUrl = new URL(origin);
-        if (host && originUrl.host !== host) {
-          return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
-        }
-      } catch {
-        return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
-      }
     }
     next();
   });
@@ -283,37 +369,42 @@ async function startServer() {
       return res.status(401).json({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
     }
 
+    let decoded: DecodedIdToken;
     try {
-      const decoded = await adminAuth.verifyIdToken(token);
-      if (decoded.email !== ADMIN_EMAIL || decoded.email_verified !== true) {
-        return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
-      }
-      (req as any).user = decoded;
-      next();
+      decoded = await adminAuth.verifyIdToken(token);
     } catch {
       // Do not log token or detailed internal errors
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token', code: 'INVALID_TOKEN' });
+    }
+
+    if (decoded.email !== ADMIN_EMAIL || decoded.email_verified !== true) {
       return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
     }
+    (req as any).user = decoded;
+    next();
   };
 
   // POST /api/discover - Admin AI event discovery endpoint
   app.post('/api/discover', verifyAdminAuth, async (req, res) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     if (!checkRateLimit(ipDiscoverLimits, ip, 5, 60000)) {
-      return res.status(429).json({ error: 'Discovery rate limit exceeded. Please wait a minute.' });
+      return res.status(429).json({ error: 'Discovery rate limit exceeded. Please wait a minute.', code: 'RATE_LIMITED' });
     }
 
     if (isDiscovering) {
-      return res.status(409).json({ error: 'Discovery job already in progress.' });
+      return res.status(409).json({ error: 'Discovery job already in progress.', code: 'DISCOVERY_IN_PROGRESS' });
     }
 
     if (!ai.hasAvailableKey()) {
-      return res.status(500).json({ error: 'Discovery service temporarily unavailable (GEMINI_API_KEY is not configured).' });
+      return res.status(500).json({
+        error: 'Discovery service temporarily unavailable (GEMINI_API_KEY is not configured).',
+        code: 'MISSING_API_KEY',
+      });
     }
 
     // Validate body (must be empty or a plain object)
     if (req.body && (typeof req.body !== 'object' || Array.isArray(req.body))) {
-      return res.status(400).json({ error: 'Invalid request payload.' });
+      return res.status(400).json({ error: 'Invalid request payload.', code: 'BAD_REQUEST' });
     }
 
     isDiscovering = true;
@@ -518,7 +609,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
           code: 'RATE_LIMITED',
         });
       }
-      return res.status(500).json({ error: 'Discovery operation failed' });
+      return res.status(500).json({ error: 'Discovery operation failed', code: 'DISCOVERY_FAILED' });
     }
   });
 
@@ -527,32 +618,32 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
     // 1. Require a signed-in user via Firebase ID token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized: Sign in required' });
+      return res.status(401).json({ error: 'Unauthorized: Sign in required', code: 'UNAUTHORIZED' });
     }
     const token = authHeader.split('Bearer ')[1]?.trim();
     if (!token) {
-      return res.status(401).json({ error: 'Unauthorized: Sign in required' });
+      return res.status(401).json({ error: 'Unauthorized: Sign in required', code: 'UNAUTHORIZED' });
     }
 
     let decodedUser: DecodedIdToken;
     try {
       decodedUser = await adminAuth.verifyIdToken(token);
     } catch {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token', code: 'INVALID_TOKEN' });
     }
 
     // 2. Client sends only { eventId, lang }
     const { eventId, lang } = req.body || {};
     if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
-      return res.status(400).json({ error: 'Invalid eventId' });
+      return res.status(400).json({ error: 'Invalid eventId', code: 'BAD_REQUEST' });
     }
     if (lang !== 'th' && lang !== 'en') {
-      return res.status(400).json({ error: 'Language must be "th" or "en"' });
+      return res.status(400).json({ error: 'Language must be "th" or "en"', code: 'BAD_REQUEST' });
     }
     const cleanLang: 'th' | 'en' = lang;
     const cleanEventId = eventId.trim();
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(cleanEventId)) {
-      return res.status(400).json({ error: 'Invalid eventId format' });
+      return res.status(400).json({ error: 'Invalid eventId format', code: 'BAD_REQUEST' });
     }
 
     // 3. User limit: 10 previews per hour
@@ -580,6 +671,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
       if (!eventDoc.exists) {
         return res.status(404).json({
           error: cleanLang === 'en' ? 'Event not found' : 'ไม่พบข้อมูลคอนเสิร์ตนี้',
+          code: 'NOT_FOUND',
         });
       }
       const eventData = eventDoc.data() as any;
@@ -599,6 +691,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
             cleanLang === 'en'
               ? 'Event is in the past or not found'
               : 'คอนเสิร์ตนี้ผ่านไปแล้วหรือไม่พบข้อมูล',
+          code: 'NOT_FOUND',
         });
       }
 
@@ -631,6 +724,7 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
             cleanLang === 'en'
               ? 'AI preview service is currently unavailable.'
               : 'บริการ AI preview ยังไม่พร้อมใช้งาน',
+          code: 'SERVICE_UNAVAILABLE',
         });
       }
 
@@ -723,6 +817,7 @@ Provide:
           cleanLang === 'en'
             ? 'Failed to generate event preview. Please try again.'
             : 'ไม่สามารถสร้างพรีวิวได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง',
+        code: 'PREVIEW_FAILED',
       });
     }
   });
