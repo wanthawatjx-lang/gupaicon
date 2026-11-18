@@ -9,7 +9,7 @@ export interface CalendarEventInput {
   id: string;
   title: string;
   artists?: string[];
-  startAt: string | number | { seconds: number; nanoseconds: number };
+  startAt: string | number | Date | { seconds: number; nanoseconds?: number; toDate?: () => Date };
   priceText?: string;
   ticketUrl?: string;
 }
@@ -101,11 +101,13 @@ export function foldLine(line: string): string {
  * buildIcsFileName("คอนเสิร์ตอินดี้") => "gupaicon-event.ics"
  */
 export function buildIcsFileName(title: string): string {
-  const slug = (title || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'event';
+  const slug =
+    (title || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .replace(/-+$/g, '') || 'event';
   return `gupaicon-${slug}.ics`;
 }
 
@@ -195,11 +197,12 @@ export function buildIcs(
   if (event.artists && event.artists.length > 0) {
     descParts.push(`Artists: ${event.artists.join(', ')}`);
   }
-  if (event.priceText) {
-    descParts.push(`Price: ${event.priceText}`);
+  if (event.priceText && event.priceText.trim()) {
+    descParts.push(`Price: ${event.priceText.trim()}`);
   }
-  if (event.ticketUrl) {
-    descParts.push(`Tickets: ${event.ticketUrl}`);
+  const cleanTicketUrl = event.ticketUrl?.trim();
+  if (cleanTicketUrl) {
+    descParts.push(`Tickets: ${cleanTicketUrl}`);
   }
   descParts.push('End time is approximate.');
   descParts.push('Ticket status may have changed, check the official ticket page.');
@@ -226,8 +229,8 @@ export function buildIcs(
 
   lines.push(`DESCRIPTION:${escapedDescription}`);
 
-  if (event.ticketUrl) {
-    lines.push(`URL:${event.ticketUrl.trim()}`);
+  if (cleanTicketUrl) {
+    lines.push(`URL:${cleanTicketUrl}`);
   }
 
   // Reminder alarm 1 day before
@@ -288,11 +291,11 @@ export function buildGoogleCalendarUrl(
   if (event.artists && event.artists.length > 0) {
     detailsParts.push(`Artists: ${event.artists.join(', ')}`);
   }
-  if (event.priceText) {
-    detailsParts.push(`Price: ${event.priceText}`);
+  if (event.priceText && event.priceText.trim()) {
+    detailsParts.push(`Price: ${event.priceText.trim()}`);
   }
-  if (event.ticketUrl) {
-    detailsParts.push(`Tickets: ${event.ticketUrl}`);
+  if (event.ticketUrl && event.ticketUrl.trim()) {
+    detailsParts.push(`Tickets: ${event.ticketUrl.trim()}`);
   }
   detailsParts.push('End time is approximate.');
   detailsParts.push('Ticket status may have changed, check the official ticket page.');

@@ -7,7 +7,7 @@ import { Venue } from '../types/venue';
 import { STATUS_MAP } from '../utils/statusUtils';
 import { computeDisplayedStatus } from '../utils/crowdStatusLogic';
 import { fetchEventReports, submitCrowdReport } from '../services/reportService';
-import { formatBangkokDateTime, parseTimestampToDate } from '../utils/dateUtils';
+import { formatBangkokDateTime, parseStrictBangkokDate } from '../utils/dateUtils';
 import { buildIcs, buildGoogleCalendarUrl, buildIcsFileName, triggerIcsDownload } from '../utils/calendar';
 import { safeExternalUrl } from '../utils/urlUtils';
 import { Language, translations } from '../i18n';
@@ -262,8 +262,8 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
   };
 
   // Calendar helpers and past event detection
-  const eventStartDate = event ? parseTimestampToDate(event.startAt) : new Date();
-  const isPastEvent = event ? eventStartDate.getTime() < Date.now() : false;
+  const eventStartDate = event ? parseStrictBangkokDate(event.startAt) : null;
+  const isPastEvent = event ? (!eventStartDate || eventStartDate.getTime() < Date.now()) : false;
   const calendarVenue = venue || (venueName ? { name: venueName } : null);
 
   const handleAddToCalendar = () => {
@@ -695,8 +695,6 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({
                 <a
                   href={downloadIcsUrl}
                   download={downloadIcsFilename}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="text-neutral-300 hover:text-white underline underline-offset-2 flex items-center gap-1 transition-colors"
                 >
                   <span>{t.eventDetail.openCalendarFile}</span>
