@@ -6,8 +6,8 @@ import { EventStatus } from '../../types/event';
 import { fetchEventDrafts, updateEventDraft, approveEventDraft, rejectEventDraft } from '../../services/draftService';
 import { formatBangkokDateTime, parseStrictBangkokDate } from '../../utils/dateUtils';
 import { safeExternalUrl } from '../../utils/urlUtils';
-import { postApiJson } from '../../utils/apiClient';
-import { Language } from '../../i18n';
+import { ApiClientError, postApiJson } from '../../utils/apiClient';
+import { Language, translations } from '../../i18n';
 import {
   Sparkles,
   CheckCircle2,
@@ -86,7 +86,13 @@ export const AiReviewAdmin: React.FC<AiReviewAdminProps> = ({ user, venues, lang
       setSuccess(`Discovery completed! Discovered ${data.discoveredCount || 0} items, saved ${data.savedCount || 0} new pending drafts.`);
       await loadDrafts();
     } catch (err: any) {
-      setError(err?.message || 'Failed to execute discovery.');
+      if (err instanceof ApiClientError) {
+        const dict = translations[lang].admin.discoveryErrors as Record<string, string>;
+        const friendly = dict[err.code];
+        setError(friendly ? `${friendly} [${err.status} ${err.code}]` : err.message);
+      } else {
+        setError(err?.message || 'Failed to execute discovery.');
+      }
     } finally {
       setIsDiscovering(false);
     }

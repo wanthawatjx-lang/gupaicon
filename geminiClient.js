@@ -53,7 +53,7 @@ export function sanitizeError(err) {
 export class GeminiClient {
   constructor(options = {}) {
     this.userAgent = options.userAgent || 'aistudio-build';
-    this.timeoutMs = options.timeoutMs ?? 15000;
+    this.timeoutMs = options.timeoutMs ?? 25000;
     this._client = null;
 
     // Drop-in compatible models interface
@@ -104,7 +104,10 @@ export class GeminiClient {
    */
   async execute(operation) {
     if (!this.hasAvailableKey()) {
-      throw new Error('[GeminiClient] GEMINI_API_KEY is not set in environment variables.');
+      const missingErr = new Error('[GeminiClient] GEMINI_API_KEY is not set in environment variables.');
+      missingErr.code = 'MISSING_API_KEY';
+      missingErr.status = 503;
+      throw missingErr;
     }
 
     const client = this._getClient();
@@ -137,7 +140,11 @@ export class GeminiClient {
 
       const safeMsg = sanitizeError(err);
       console.error('[GeminiClient] Request error:', safeMsg);
-      throw new Error(safeMsg);
+      const wrappedErr = new Error(safeMsg);
+      if (typeof err?.status === 'number') wrappedErr.status = err.status;
+      else if (typeof err?.statusCode === 'number') wrappedErr.status = err.statusCode;
+      if (typeof err?.code === 'string' || typeof err?.code === 'number') wrappedErr.code = err.code;
+      throw wrappedErr;
     }
   }
 

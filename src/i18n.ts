@@ -146,6 +146,18 @@ export interface TranslationDictionary {
     reportsCount: (n: number) => string;
     deleteReports: string;
     reportsDeleted: string;
+    discoveryErrors: {
+      MISSING_API_KEY: string;
+      MODEL_UNAVAILABLE: string;
+      RATE_LIMITED: string;
+      NO_ACTIVE_SOURCES: string;
+      FIRESTORE_WRITE_FAILED: string;
+      FIRESTORE_READ_FAILED: string;
+      FIRESTORE_PERMISSION_DENIED: string;
+      MODEL_OUTPUT_INVALID: string;
+      DISCOVERY_IN_PROGRESS: string;
+      DISCOVERY_FAILED: string;
+    };
   };
   community: {
     findBuddy: string;
@@ -412,6 +424,18 @@ export const translations: Record<Language, TranslationDictionary> = {
       reportsCount: (n) => `${n} รายงานใน 90 นาที`,
       deleteReports: 'ลบรายงานทั้งหมด (Spam Cleanup)',
       reportsDeleted: 'ลบรายงานทั้งหมดสำเร็จแล้ว',
+      discoveryErrors: {
+        MISSING_API_KEY: 'ไม่พบหรือคีย์ GEMINI_API_KEY ไม่ถูกต้อง กรุณาตั้งค่า GEMINI_API_KEY ในเมนู Secrets ของ AI Studio แล้วรีสตาร์ทเซิร์ฟเวอร์',
+        MODEL_UNAVAILABLE: 'โมเดล Gemini ที่ตั้งค่าไว้ไม่พร้อมใช้งาน กรุณาตรวจสอบชื่อโมเดลหรือสิทธิ์การเข้าถึง',
+        RATE_LIMITED: 'โควตา Gemini API เต็มชั่วคราว (429) กรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+        NO_ACTIVE_SOURCES: 'ยังไม่มีแหล่งข้อมูลที่เปิดใช้งาน (Active Sources) กรุณาเพิ่มและเปิดใช้งานอย่างน้อย 1 แหล่งในแท็บ Sources ก่อน',
+        FIRESTORE_WRITE_FAILED: 'ไม่สามารถบันทึกร่างงานเข้าสู่ Firestore ได้ กรุณาตรวจสอบสิทธิ์ IAM ของเซิร์ฟเวอร์',
+        FIRESTORE_READ_FAILED: 'ไม่สามารถอ่านข้อมูลจาก Firestore ได้ กรุณาลองใหม่อีกครั้ง',
+        FIRESTORE_PERMISSION_DENIED: 'เซิร์ฟเวอร์ถูกปฏิเสธสิทธิ์ Firestore (PERMISSION_DENIED) กรุณาตรวจสอบสิทธิ์ IAM ของ Service Account บนโปรเจกต์ Firebase',
+        MODEL_OUTPUT_INVALID: 'โมเดลส่งคืนข้อมูล JSON ไม่ถูกต้อง ไม่สามารถประมวลผลรายการงานได้',
+        DISCOVERY_IN_PROGRESS: 'กำลังค้นหางานอยู่ กรุณารอให้รอบปัจจุบันเสร็จสิ้นก่อน',
+        DISCOVERY_FAILED: 'การค้นหางานด้วย AI ล้มเหลว กรุณาตรวจสอบบันทึกเซิร์ฟเวอร์',
+      },
     },
     community: {
       findBuddy: 'หาเพื่อนไปคอน',
@@ -676,6 +700,18 @@ export const translations: Record<Language, TranslationDictionary> = {
       reportsCount: (n) => `${n} reports in 90m`,
       deleteReports: 'Delete all reports',
       reportsDeleted: 'All crowd reports deleted successfully',
+      discoveryErrors: {
+        MISSING_API_KEY: 'GEMINI_API_KEY is missing or rejected. Set GEMINI_API_KEY in AI Studio Settings > Secrets and restart the server.',
+        MODEL_UNAVAILABLE: 'Configured Gemini model is unavailable or unsupported for this API key.',
+        RATE_LIMITED: 'Gemini API rate limit exceeded (429). Please wait a few minutes and try again.',
+        NO_ACTIVE_SOURCES: 'No active sources found. Add and enable at least one source in the Sources tab first.',
+        FIRESTORE_WRITE_FAILED: 'Failed to save discovered event drafts to Firestore. Check server Firestore IAM permissions.',
+        FIRESTORE_READ_FAILED: 'Failed to read discovery data from Firestore. Please try again.',
+        FIRESTORE_PERMISSION_DENIED: 'Server Firestore access was denied (PERMISSION_DENIED). Grant the preview service account datastore access on the Firebase project.',
+        MODEL_OUTPUT_INVALID: 'Gemini returned invalid JSON output that could not be parsed.',
+        DISCOVERY_IN_PROGRESS: 'A discovery run is already in progress. Please wait for it to finish.',
+        DISCOVERY_FAILED: 'AI event discovery failed. Check server logs for details.',
+      },
     },
     community: {
       findBuddy: 'Find a concert buddy',

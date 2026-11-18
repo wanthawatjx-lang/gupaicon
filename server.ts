@@ -7,9 +7,43 @@ import { Type } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { geminiClient } from './geminiClient.js';
+import { geminiClient, sanitizeError } from './geminiClient.js';
 
 const ADMIN_EMAIL = 'wanthawatjx@gmail.com';
+const GEMINI_MODEL = 'gemini-4-hydrogen';
+
+function isFirestorePermissionError(err: any): boolean {
+  const msg = String(err?.message || '').toUpperCase();
+  return err?.code === 7 || err?.code === 'permission-denied' || msg.includes('PERMISSION_DENIED');
+}
+
+function isGeminiModelError(err: any): boolean {
+  const msg = String(err?.message || '');
+  return (
+    err?.status === 404 ||
+    /NOT_FOUND|MODEL_NOT_FOUND|not found for API version|not supported for generateContent/i.test(msg)
+  );
+}
+
+function isGeminiKeyError(err: any): boolean {
+  const msg = String(err?.message || '');
+  return (
+    err?.code === 'MISSING_API_KEY' ||
+    /GEMINI_API_KEY is not set|API_KEY_INVALID|API key not valid|API key expired/i.test(msg) ||
+    (err?.status === 403 && /PERMISSION_DENIED|API_KEY/i.test(msg))
+  );
+}
+
+function isGeminiRateLimitError(err: any): boolean {
+  const msg = String(err?.message || '').toUpperCase();
+  return (
+    err?.code === 'RATE_LIMITED' ||
+    err?.code === 'ALL_KEYS_RATE_LIMITED' ||
+    err?.status === 429 ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('429')
+  );
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(__dirname, 'firebase-applet-config.json');
@@ -396,8 +430,9 @@ async function startServer() {
     }
 
     if (!ai.hasAvailableKey()) {
-      return res.status(500).json({
-        error: 'Discovery service temporarily unavailable (GEMINI_API_KEY is not configured).',
+      console.error('[discover] Missing GEMINI_API_KEY environment variable.');
+      return res.status(503).json({
+        error: 'GEMINI_API_KEY is not configured on the server.',
         code: 'MISSING_API_KEY',
       });
     }
@@ -409,30 +444,65 @@ async function startServer() {
 
     isDiscovering = true;
     try {
-      // 1. Fetch active sources (bounded)
-      const sourcesSnapshot = await db.collection('sources').where('active', '==', true).limit(50).get();
+      // 1. Fetch active sources (bounded) before any Gemini call
+      let sourcesSnapshot;
+      try {
+        sourcesSnapshot = await db.collection('sources').where('active', '==', true).limit(50).get();
+      } catch (readErr: any) {
+        console.error('[discover] Firestore sources read failed:', readErr?.code, sanitizeError(readErr));
+        isDiscovering = false;
+        const code = isFirestorePermissionError(readErr) ? 'FIRESTORE_PERMISSION_DENIED' : 'FIRESTORE_READ_FAILED';
+        return res.status(500).json({
+          error: isFirestorePermissionError(readErr)
+            ? 'Server Firestore permission denied while reading active sources.'
+            : 'Failed to read active sources from Firestore.',
+          code,
+        });
+      }
+
       const sources = sourcesSnapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
 
       if (sources.length === 0) {
+        console.info('[discover] No active sources found; skipping Gemini call.');
         isDiscovering = false;
-        return res.json({ success: true, message: 'No active sources found.', discoveredCount: 0, savedCount: 0 });
+        return res.status(400).json({
+          error: 'No active sources found. Please add and enable at least one source first.',
+          code: 'NO_ACTIVE_SOURCES',
+        });
       }
 
       // Limit at most 15 Gemini calls per run
       const sourcesToRun = sources.slice(0, 15);
 
       // Fetch existing venues, events, and drafts (bounded)
-      const venuesSnapshot = await db.collection('venues').limit(200).get();
-      const venues = venuesSnapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
+      let venues: any[] = [];
+      let existingEvents: any[] = [];
+      let existingDrafts: any[] = [];
+      try {
+        const venuesSnapshot = await db.collection('venues').limit(200).get();
+        venues = venuesSnapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
 
-      const eventsSnapshot = await db.collection('events').limit(300).get();
-      const existingEvents = eventsSnapshot.docs.map((d: any) => d.data());
+        const eventsSnapshot = await db.collection('events').limit(300).get();
+        existingEvents = eventsSnapshot.docs.map((d: any) => d.data());
 
-      const draftsSnapshot = await db.collection('eventDrafts').limit(300).get();
-      const existingDrafts = draftsSnapshot.docs.map((d: any) => d.data());
+        const draftsSnapshot = await db.collection('eventDrafts').limit(300).get();
+        existingDrafts = draftsSnapshot.docs.map((d: any) => d.data());
+      } catch (readErr: any) {
+        console.error('[discover] Firestore context read failed:', readErr?.code, sanitizeError(readErr));
+        isDiscovering = false;
+        const code = isFirestorePermissionError(readErr) ? 'FIRESTORE_PERMISSION_DENIED' : 'FIRESTORE_READ_FAILED';
+        return res.status(500).json({
+          error: isFirestorePermissionError(readErr)
+            ? 'Server Firestore permission denied while loading venues/events.'
+            : 'Failed to read existing discovery data from Firestore.',
+          code,
+        });
+      }
 
       let totalDiscovered = 0;
       let totalSaved = 0;
+      let invalidOutputCount = 0;
+      let sourceFailureCount = 0;
       const now = new Date();
       const maxDate = new Date(now.getTime() + 90 * 86400000); // 90 days ahead
 
@@ -443,7 +513,7 @@ Only include events with start dates from today (${now.toISOString().split('T')[
 Rules: Never invent any field, use null when unknown, never guess coordinates, skip events without a clear date, only use public web pages, do not use or imitate Instagram scraping, do not bypass logins or paywalls. Return a JSON array of events.`;
 
           const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: GEMINI_MODEL,
             contents: prompt,
             config: {
               tools: [{ googleSearch: {} }, { urlContext: {} }],
@@ -476,10 +546,16 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
           try {
             extractedEvents = JSON.parse(jsonText);
           } catch {
+            invalidOutputCount++;
+            console.warn(`[discover] Invalid JSON model output for source: ${source.id}`);
             continue;
           }
 
-          if (!Array.isArray(extractedEvents)) continue;
+          if (!Array.isArray(extractedEvents)) {
+            invalidOutputCount++;
+            console.warn(`[discover] Non-array JSON model output for source: ${source.id}`);
+            continue;
+          }
 
           for (const raw of extractedEvents) {
             totalDiscovered++;
@@ -585,14 +661,53 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
               createdAt: FieldValue.serverTimestamp(),
             };
 
-            await db.collection('eventDrafts').doc(draftId).set(draftDoc);
+            try {
+              await db.collection('eventDrafts').doc(draftId).set(draftDoc);
+            } catch (writeErr: any) {
+              console.error('[discover] Firestore draft write failed:', writeErr?.code, sanitizeError(writeErr));
+              const wrappedWriteErr: any = new Error('Failed to write draft to Firestore');
+              wrappedWriteErr.discoveryCode = 'FIRESTORE_WRITE_FAILED';
+              throw wrappedWriteErr;
+            }
             existingDrafts.push(draftDoc);
             totalSaved++;
           }
-        } catch {
-          // Log only generic notice, no secrets
-          console.warn(`Could not process source: ${source.id}`);
+        } catch (sourceErr: any) {
+          if (sourceErr?.discoveryCode === 'FIRESTORE_WRITE_FAILED') {
+            throw sourceErr;
+          }
+          if (isGeminiRateLimitError(sourceErr)) {
+            throw sourceErr;
+          }
+          if (isGeminiKeyError(sourceErr)) {
+            const keyErr: any = new Error('Invalid Gemini API key');
+            keyErr.discoveryCode = 'MISSING_API_KEY';
+            throw keyErr;
+          }
+          if (isGeminiModelError(sourceErr)) {
+            const modelErr: any = new Error(`Model unavailable: ${GEMINI_MODEL}`);
+            modelErr.discoveryCode = 'MODEL_UNAVAILABLE';
+            throw modelErr;
+          }
+          sourceFailureCount++;
+          console.error(`[discover] Could not process source ${source.id}:`, sanitizeError(sourceErr));
         }
+      }
+
+      if (sourcesToRun.length > 0 && invalidOutputCount === sourcesToRun.length) {
+        isDiscovering = false;
+        return res.status(502).json({
+          error: 'Gemini returned invalid JSON output for all active sources.',
+          code: 'MODEL_OUTPUT_INVALID',
+        });
+      }
+
+      if (sourcesToRun.length > 0 && sourceFailureCount === sourcesToRun.length && totalDiscovered === 0 && totalSaved === 0) {
+        isDiscovering = false;
+        return res.status(502).json({
+          error: 'Discovery failed across all active sources.',
+          code: 'DISCOVERY_FAILED',
+        });
       }
 
       isDiscovering = false;
@@ -603,10 +718,36 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
       });
     } catch (err: any) {
       isDiscovering = false;
-      if (err?.code === 'RATE_LIMITED' || err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
+      console.error('[discover] Discovery operation error:', err?.discoveryCode || err?.code, sanitizeError(err));
+
+      if (err?.discoveryCode === 'FIRESTORE_WRITE_FAILED') {
+        return res.status(500).json({
+          error: 'Failed to save discovered event drafts to Firestore.',
+          code: 'FIRESTORE_WRITE_FAILED',
+        });
+      }
+      if (err?.discoveryCode === 'MISSING_API_KEY' || isGeminiKeyError(err)) {
+        return res.status(503).json({
+          error: 'GEMINI_API_KEY is missing or rejected by the Gemini API.',
+          code: 'MISSING_API_KEY',
+        });
+      }
+      if (err?.discoveryCode === 'MODEL_UNAVAILABLE' || isGeminiModelError(err)) {
+        return res.status(502).json({
+          error: `Gemini model "${GEMINI_MODEL}" is unavailable.`,
+          code: 'MODEL_UNAVAILABLE',
+        });
+      }
+      if (isGeminiRateLimitError(err)) {
         return res.status(429).json({
-          error: 'Gemini API rate limit exceeded (429). Please wait a few minutes and try again. / โควตา Gemini API เต็มชั่วคราว (429) กรุณารอสักครู่แล้วลองใหม่',
+          error: 'Gemini API rate limit exceeded (429). Please wait a few minutes and try again.',
           code: 'RATE_LIMITED',
+        });
+      }
+      if (isFirestorePermissionError(err)) {
+        return res.status(500).json({
+          error: 'Server Firestore permission denied during discovery.',
+          code: 'FIRESTORE_PERMISSION_DENIED',
         });
       }
       return res.status(500).json({ error: 'Discovery operation failed', code: 'DISCOVERY_FAILED' });
@@ -722,9 +863,9 @@ Rules: Never invent any field, use null when unknown, never guess coordinates, s
         return res.status(503).json({
           error:
             cleanLang === 'en'
-              ? 'AI preview service is currently unavailable.'
-              : 'บริการ AI preview ยังไม่พร้อมใช้งาน',
-          code: 'SERVICE_UNAVAILABLE',
+              ? 'AI preview service is unavailable (GEMINI_API_KEY not configured).'
+              : 'บริการ AI preview ยังไม่พร้อมใช้งาน (ยังไม่ได้ตั้งค่า GEMINI_API_KEY)',
+          code: 'MISSING_API_KEY',
         });
       }
 
@@ -756,7 +897,7 @@ Provide:
 4. practicalTip: 1 practical insider tip for attendees (transport, arrival time, or venue advice).`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: GEMINI_MODEL,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -803,7 +944,35 @@ Provide:
       previewCache.set(cacheKey, { data: previewData, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
       return res.json({ success: true, preview: previewData });
     } catch (err: any) {
-      if (err?.code === 'RATE_LIMITED' || err?.code === 'ALL_KEYS_RATE_LIMITED' || err?.status === 429) {
+      console.error('[event-preview] Error:', err?.code, sanitizeError(err));
+      if (isFirestorePermissionError(err)) {
+        return res.status(500).json({
+          error:
+            cleanLang === 'en'
+              ? 'Server Firestore permission denied while loading event preview.'
+              : 'เซิร์ฟเวอร์ไม่มีสิทธิ์อ่านข้อมูลคอนเสิร์ตจาก Firestore',
+          code: 'FIRESTORE_PERMISSION_DENIED',
+        });
+      }
+      if (isGeminiKeyError(err)) {
+        return res.status(503).json({
+          error:
+            cleanLang === 'en'
+              ? 'GEMINI_API_KEY is missing or invalid.'
+              : 'ไม่พบหรือคีย์ GEMINI_API_KEY ไม่ถูกต้อง',
+          code: 'MISSING_API_KEY',
+        });
+      }
+      if (isGeminiModelError(err)) {
+        return res.status(502).json({
+          error:
+            cleanLang === 'en'
+              ? `Gemini model "${GEMINI_MODEL}" is unavailable.`
+              : `โมเดล Gemini "${GEMINI_MODEL}" ไม่พร้อมใช้งาน`,
+          code: 'MODEL_UNAVAILABLE',
+        });
+      }
+      if (isGeminiRateLimitError(err)) {
         return res.status(429).json({
           error:
             cleanLang === 'en'
